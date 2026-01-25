@@ -22,6 +22,19 @@ export function Layout(props: { children: ReactNode }) {
         <main className="main">{props.children}</main>
         <footer className="footer">
           <p>{PRIVACY_NOTICE}</p>
+          <div style={{ marginTop: 12, fontSize: 14, color: "rgba(255,255,255,0.6)" }}>
+            <p style={{ margin: 0 }}>
+              Xurshidbek Murotov | Student Number: 2427305 |{" "}
+              <a
+                href="https://github.com/KhurshidMurotov"
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "rgba(255,255,255,0.8)", textDecoration: "underline" }}
+              >
+                GitHub
+              </a>
+            </p>
+          </div>
         </footer>
       </div>
     </>
