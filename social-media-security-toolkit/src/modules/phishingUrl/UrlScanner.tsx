@@ -15,11 +15,19 @@ export function UrlScanner() {
   const normalized = normalizeUrl(input);
   const examples = [
     // Intentionally non-real / non-active "malicious-looking" examples (use for awareness UX)
+    // Diverse examples: typosquatting, suspicious domains, short links, mixed content
     "https://login-microsoftonline-com.account-verify.example/secure",
+    "http://bit.ly/suspicious-redirect-xyz",
+    "https://amaz0n.com/deals/special-offer",
     "https://paypal.com.security-check.invalid/signin",
-    "http://appleid.apple.com.verify-session.example/reset",
+    "http://192.168.1.100:8080/update-required",
+    "https://appleid.apple.com.verify-session.example/reset",
+    "http://free-gift-claim.tk/claim-now",
     "https://dropbox.com.share-file.example/login",
-    "https://banking-update-required.example/confirm"
+    "https://banking-update-required.example/confirm",
+    "http://suspicious-short.link/abc123xyz",
+    "https://faceb00k.com/login/verify-account",
+    "http://unsecured-site.info/enter-details"
   ];
 
   async function scan() {
