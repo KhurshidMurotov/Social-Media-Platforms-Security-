@@ -35,6 +35,7 @@ body {
     radial-gradient(1000px 600px at 90% 20%, #2a144b 0%, transparent 60%),
     var(--bg);
   color: var(--text);
+  scroll-behavior: smooth;
 }
 
 a {
@@ -48,7 +49,12 @@ a {
 }
 
 .header {
-  padding: 32px 20px 18px;
+  padding: 18px 20px 12px;
+  background: #0b2447;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .header__inner {
@@ -56,16 +62,59 @@ a {
   margin: 0 auto;
 }
 
+.header__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.header__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .title {
   margin: 0;
-  font-size: 28px;
+  font-size: 22px;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   max-width: 70ch;
+  font-size: 13px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 14px;
+}
+
+.nav__link {
+  position: relative;
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: none;
+  padding-bottom: 2px;
+}
+
+.nav__link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  transition: width 0.2s ease-out;
+}
+
+.nav__link:hover::after {
+  width: 100%;
 }
 
 .main {

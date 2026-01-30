@@ -10,8 +10,8 @@ export default function HomePage() {
   return (
     <Layout>
       <ConsentNotice />
-      <div className="grid">
-        <div className="span-6">
+      <div className="grid" id="top">
+        <div className="span-12" id="password">
           <ModuleCard
             title="Password Strength Checker"
             description="Client-side awareness check: length, estimated entropy, and basic pattern warnings."
@@ -20,7 +20,7 @@ export default function HomePage() {
           </ModuleCard>
         </div>
 
-        <div className="span-6">
+        <div className="span-12" id="email-leak">
           <ModuleCard
             title="Email Leak Checker"
             description="Checks whether an email appears in known breach datasets (requires HIBP_API_KEY or LEAKCHECK_API_KEY)."
@@ -29,7 +29,7 @@ export default function HomePage() {
           </ModuleCard>
         </div>
 
-        <div className="span-6">
+        <div className="span-12" id="url-scanner">
           <ModuleCard
             title="Phishing / Malicious URL Scanner (VirusTotal)"
             description="Server-side proxy to scan a URL using VirusTotal (requires VT API key)."
@@ -38,7 +38,7 @@ export default function HomePage() {
           </ModuleCard>
         </div>
 
-        <div className="span-6">
+        <div className="span-12" id="username-finder">
           <ModuleCard
             title="OSINT Username Finder"
             description="Shows where a username may exist across popular platforms, with limited verification via safe public APIs."
