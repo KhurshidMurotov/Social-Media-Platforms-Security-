@@ -1,28 +1,55 @@
 import { useState } from "react";
-import { isValidEmail } from "@/lib/validators";
 import { ResultBox } from "@/components/ResultBox";
+import { isValidEmail } from "@/lib/validators";
 
-type HibpResponse =
-  | { ok: true; found: false }
-  | { ok: true; found: true; breaches: Array<{ Name: string; Title?: string; BreachDate?: string; Domain?: string }> }
-  | { ok: false; error: string; code?: string };
+type BreachSummary = {
+  Name: string;
+  Title?: string;
+  BreachDate?: string;
+  Domain?: string;
+};
+
+type EmailLeakData = {
+  provider: "hibp" | "leakcheck";
+  found: boolean;
+  breaches: BreachSummary[];
+};
+
+type ApiError = {
+  code: string;
+  message: string;
+};
+
+type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
+
+function providerLabel(provider: EmailLeakData["provider"]) {
+  if (provider === "hibp") return "Have I Been Pwned";
+  return "LeakCheck";
+}
 
 export function EmailLeakChecker() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<HibpResponse | null>(null);
+  const [result, setResult] = useState<ApiResponse<EmailLeakData> | null>(null);
 
   const canCheck = isValidEmail(email);
 
   async function onCheck() {
     setLoading(true);
     setResult(null);
+
     try {
-      const res = await fetch(`/api/hibp?email=${encodeURIComponent(email.trim())}`);
-      const json = (await res.json()) as HibpResponse;
-      setResult(json);
-    } catch (e) {
-      setResult({ ok: false, error: e instanceof Error ? e.message : "Unknown error" });
+      const response = await fetch(`/api/hibp?email=${encodeURIComponent(email.trim())}`);
+      const payload = (await response.json()) as ApiResponse<EmailLeakData>;
+      setResult(payload);
+    } catch (error) {
+      setResult({
+        ok: false,
+        error: {
+          code: "NETWORK_ERROR",
+          message: error instanceof Error ? error.message : "Unknown network error."
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -42,14 +69,6 @@ export function EmailLeakChecker() {
         </button>
       </div>
 
-      <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 13 }}>
-        Powered by{" "}
-        <a href="https://leakcheck.io" target="_blank" rel="noreferrer">
-          LeakCheck
-        </a>
-        .
-      </div>
-
       {!canCheck && email.trim() ? (
         <ResultBox tone="warn" title="Validation">
           Please enter a valid email format.
@@ -58,28 +77,35 @@ export function EmailLeakChecker() {
 
       {result ? (
         result.ok ? (
-          result.found ? (
-            <ResultBox tone="bad" title="Breaches found">
-              <div style={{ marginBottom: 6 }}>
-                This email appears in public breach datasets. Change passwords, enable MFA, and stop reusing passwords.
-              </div>
-              <ul>
-                {result.breaches.slice(0, 20).map((b) => (
-                  <li key={b.Name}>
-                    <strong>{b.Title ?? b.Name}</strong>
-                    {b.Domain ? ` (${b.Domain})` : ""} {b.BreachDate ? `— ${b.BreachDate}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </ResultBox>
-          ) : (
-            <ResultBox tone="good" title="No breaches found (best-effort)">
-              Not found in the queried dataset. This does not guarantee safety.
-            </ResultBox>
-          )
+          <>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 13 }}>
+              Provider: <strong>{providerLabel(result.data.provider)}</strong>
+            </div>
+
+            {result.data.found ? (
+              <ResultBox tone="bad" title="Breaches found">
+                <div style={{ marginBottom: 6 }}>
+                  This email appears in public breach datasets. Change passwords, enable MFA, and stop reusing passwords.
+                </div>
+                <ul>
+                  {result.data.breaches.slice(0, 20).map((breach) => (
+                    <li key={`${breach.Name}-${breach.BreachDate ?? "n/a"}`}>
+                      <strong>{breach.Title ?? breach.Name}</strong>
+                      {breach.Domain ? ` (${breach.Domain})` : ""}
+                      {breach.BreachDate ? ` - ${breach.BreachDate}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </ResultBox>
+            ) : (
+              <ResultBox tone="good" title="No breaches found (best-effort)">
+                Not found in the queried dataset. This does not guarantee safety.
+              </ResultBox>
+            )}
+          </>
         ) : (
           <ResultBox tone="warn" title="Unavailable">
-            {result.error}
+            {result.error.message}
           </ResultBox>
         )
       ) : null}

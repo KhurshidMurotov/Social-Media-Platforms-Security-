@@ -1,10 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { normalizeUrl } from "@/lib/validators";
+import { sendError, sendOk, mapUpstreamStatus, type ApiResponse } from "@/lib/apiResponse";
+import { fetchWithTimeout } from "@/lib/fetchWithTimeout";
 import { rateLimit } from "@/lib/rateLimit";
+import { normalizeUrl } from "@/lib/validators";
 
 type VtStats = Record<string, number>;
+type VtVerdict = "malicious" | "suspicious" | "clean" | "unknown";
 
-function computeVerdict(stats: VtStats): "malicious" | "suspicious" | "clean" | "unknown" {
+type VtUrlData = {
+  url: string;
+  analysisId: string;
+  stats: VtStats;
+  verdict: VtVerdict;
+};
+
+function getClientIp(req: NextApiRequest) {
+  return (
+    (typeof req.headers["x-forwarded-for"] === "string" &&
+      req.headers["x-forwarded-for"].split(",")[0]?.trim()) ||
+    req.socket.remoteAddress ||
+    "unknown"
+  );
+}
+
+function computeVerdict(stats: VtStats): VtVerdict {
   const malicious = stats.malicious ?? 0;
   const suspicious = stats.suspicious ?? 0;
   const harmless = stats.harmless ?? 0;
@@ -16,43 +35,40 @@ function computeVerdict(stats: VtStats): "malicious" | "suspicious" | "clean" | 
 }
 
 async function sleep(ms: number) {
-  await new Promise((r) => setTimeout(r, ms));
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse<VtUrlData>>) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+    return sendError(res, 405, "METHOD_NOT_ALLOWED", "Method not allowed.");
   }
 
-  const ip =
-    (typeof req.headers["x-forwarded-for"] === "string" && req.headers["x-forwarded-for"].split(",")[0]?.trim()) ||
-    req.socket.remoteAddress ||
-    "unknown";
-  const rl = rateLimit({ key: `vt:${ip}`, limit: 10, windowMs: 60_000 });
+  const rl = rateLimit({ key: `vt:${getClientIp(req)}`, limit: 10, windowMs: 60_000 });
   if (!rl.ok) {
-    res.setHeader("Retry-After", String(rl.retryAfterSeconds));
-    return res.status(429).json({ ok: false, error: "Too many requests. Please retry later." });
+    return sendError(res, 429, "RATE_LIMITED", "Too many requests. Please retry later.", {
+      "Retry-After": String(rl.retryAfterSeconds)
+    });
   }
 
   const apiKey = process.env.VT_API_KEY;
   if (!apiKey) {
-    return res.status(501).json({
-      ok: false,
-      code: "MISSING_VT_KEY",
-      error: "VirusTotal API key is not configured. Set VT_API_KEY in Vercel / .env.local."
-    });
+    return sendError(
+      res,
+      503,
+      "MISSING_API_KEY",
+      "URL scanner is not configured. Set VT_API_KEY to enable this feature."
+    );
   }
 
   const urlInput = typeof req.body?.url === "string" ? req.body.url : "";
   const url = normalizeUrl(urlInput);
   if (!url) {
-    return res.status(400).json({ ok: false, error: "Invalid URL" });
+    return sendError(res, 400, "INVALID_INPUT", "Please provide a valid public http/https URL.");
   }
 
   try {
-    // 1) Submit URL for analysis
-    const submitRes = await fetch("https://www.virustotal.com/api/v3/urls", {
+    const submitRes = await fetchWithTimeout("https://www.virustotal.com/api/v3/urls", {
       method: "POST",
       headers: {
         "x-apikey": apiKey,
@@ -62,12 +78,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!submitRes.ok) {
-      const text = await submitRes.text();
-      return res.status(submitRes.status).json({
-        ok: false,
-        code: "VT_SUBMIT_FAILED",
-        error: `VirusTotal submit failed (${submitRes.status}). ${text}`.slice(0, 400)
-      });
+      const mapped = mapUpstreamStatus(submitRes.status);
+      const code = mapped === 401 || mapped === 403 ? "UPSTREAM_AUTH_FAILED" : "UPSTREAM_REQUEST_FAILED";
+      return sendError(res, mapped, code, `VirusTotal submit failed with status ${submitRes.status}.`);
     }
 
     const submitJson = (await submitRes.json()) as unknown;
@@ -75,23 +88,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const dataObj =
       typeof submitObj.data === "object" && submitObj.data !== null ? (submitObj.data as Record<string, unknown>) : {};
     const analysisId = String(dataObj.id ?? "");
+
     if (!analysisId) {
-      return res.status(502).json({ ok: false, error: "VirusTotal returned no analysis id" });
+      return sendError(res, 502, "INVALID_UPSTREAM_RESPONSE", "VirusTotal returned no analysis id.");
     }
 
-    // 2) Poll analysis a few times (best-effort). If not ready, return id.
     for (let i = 0; i < 3; i += 1) {
-      const analysisRes = await fetch(`https://www.virustotal.com/api/v3/analyses/${encodeURIComponent(analysisId)}`, {
-        headers: { "x-apikey": apiKey }
-      });
+      const analysisRes = await fetchWithTimeout(
+        `https://www.virustotal.com/api/v3/analyses/${encodeURIComponent(analysisId)}`,
+        { headers: { "x-apikey": apiKey } }
+      );
 
       if (!analysisRes.ok) {
-        const text = await analysisRes.text();
-        return res.status(analysisRes.status).json({
-          ok: false,
-          code: "VT_ANALYSIS_FAILED",
-          error: `VirusTotal analysis fetch failed (${analysisRes.status}). ${text}`.slice(0, 400)
-        });
+        const mapped = mapUpstreamStatus(analysisRes.status);
+        const code = mapped === 401 || mapped === 403 ? "UPSTREAM_AUTH_FAILED" : "UPSTREAM_REQUEST_FAILED";
+        return sendError(res, mapped, code, `VirusTotal analysis failed with status ${analysisRes.status}.`);
       }
 
       const analysisJson = (await analysisRes.json()) as unknown;
@@ -106,8 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         typeof attrs.stats === "object" && attrs.stats !== null ? (attrs.stats as VtStats) : ({} as VtStats);
 
       if (status === "completed" || status === "completed_successfully") {
-        return res.status(200).json({
-          ok: true,
+        return sendOk(res, {
           url,
           analysisId,
           stats,
@@ -118,15 +128,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await sleep(1500);
     }
 
-    return res.status(200).json({
-      ok: true,
+    return sendOk(res, {
       url,
       analysisId,
       stats: {},
       verdict: "unknown"
     });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Unknown error" });
+  } catch (error) {
+    if (error instanceof Error && error.message === "UPSTREAM_TIMEOUT") {
+      return sendError(res, 503, "UPSTREAM_TIMEOUT", "VirusTotal request timed out.");
+    }
+
+    return sendError(res, 502, "UPSTREAM_REQUEST_FAILED", "Failed to reach VirusTotal.");
   }
 }
 

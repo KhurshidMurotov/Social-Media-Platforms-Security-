@@ -1,11 +1,22 @@
 import { useMemo, useState } from "react";
 import { ResultBox } from "@/components/ResultBox";
-import { isValidUsername } from "@/lib/validators";
 import { USERNAME_PLATFORMS } from "@/lib/constants";
+import { isValidUsername } from "@/lib/validators";
 
 type CheckStatus = "unknown" | "checking" | "exists" | "not_found" | "unavailable";
 type StatusMap = Record<string, CheckStatus>;
 type VisibleItems = Set<string>;
+
+type UsernameCheckData = {
+  exists: boolean;
+};
+
+type ApiError = {
+  code: string;
+  message: string;
+};
+
+type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
 export function UsernameFinder() {
   const [username, setUsername] = useState("");
@@ -16,57 +27,54 @@ export function UsernameFinder() {
   const canRun = isValidUsername(username);
 
   const items = useMemo(() => {
-    const u = username.trim();
-    if (!u) return [];
-    return USERNAME_PLATFORMS.map((p) => ({
-      ...p,
-      url: p.profileUrl(u)
+    const value = username.trim();
+    if (!value) return [];
+    return USERNAME_PLATFORMS.map((platform) => ({
+      ...platform,
+      url: platform.profileUrl(value)
     }));
   }, [username]);
 
   async function verifySupported() {
     if (!canRun || isSearching) return;
-    const u = username.trim();
+
+    const value = username.trim();
     setIsSearching(true);
     setVisibleItems(new Set());
     setStatus({});
 
-    // First, check platforms that support verification
-    const supported = USERNAME_PLATFORMS.filter((p) => p.supportsVerification);
+    const supported = USERNAME_PLATFORMS.filter((platform) => platform.supportsVerification);
     const next: StatusMap = {};
-    supported.forEach((p) => (next[p.id] = "checking"));
+    supported.forEach((platform) => {
+      next[platform.id] = "checking";
+    });
     setStatus(next);
 
-    // Check each supported platform sequentially with delay
-    for (let i = 0; i < supported.length; i++) {
-      const p = supported[i];
+    for (let i = 0; i < supported.length; i += 1) {
+      const platform = supported[i];
       try {
-        const res = await fetch(
-          `/api/username-check?platform=${encodeURIComponent(p.id)}&username=${encodeURIComponent(u)}`
+        const response = await fetch(
+          `/api/username-check?platform=${encodeURIComponent(platform.id)}&username=${encodeURIComponent(value)}`
         );
-        const json = (await res.json()) as
-          | { ok: true; exists: boolean }
-          | { ok: false; error: string };
-        
-        const newStatus = json.ok ? (json.exists ? "exists" : "not_found") : "unavailable";
+        const payload = (await response.json()) as ApiResponse<UsernameCheckData>;
+
+        const newStatus = payload.ok ? (payload.data.exists ? "exists" : "not_found") : "unavailable";
         setStatus((prev) => ({
           ...prev,
-          [p.id]: newStatus
+          [platform.id]: newStatus
         }));
 
-        // Show result after a short delay (staggered appearance)
         await new Promise((resolve) => setTimeout(resolve, 300 + i * 150));
-        setVisibleItems((prev) => new Set([...prev, p.id]));
+        setVisibleItems((prev) => new Set([...prev, platform.id]));
       } catch {
-        setStatus((prev) => ({ ...prev, [p.id]: "unavailable" }));
+        setStatus((prev) => ({ ...prev, [platform.id]: "unavailable" }));
         await new Promise((resolve) => setTimeout(resolve, 300 + i * 150));
-        setVisibleItems((prev) => new Set([...prev, p.id]));
+        setVisibleItems((prev) => new Set([...prev, platform.id]));
       }
     }
 
-    // Then show non-verifiable platforms with delay
-    const nonSupported = USERNAME_PLATFORMS.filter((p) => !p.supportsVerification);
-    for (let i = 0; i < nonSupported.length; i++) {
+    const nonSupported = USERNAME_PLATFORMS.filter((platform) => !platform.supportsVerification);
+    for (let i = 0; i < nonSupported.length; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 200 + i * 100));
       setVisibleItems((prev) => new Set([...prev, nonSupported[i].id]));
     }
@@ -74,15 +82,15 @@ export function UsernameFinder() {
     setIsSearching(false);
   }
 
-  function badge(s: CheckStatus) {
-    if (s === "exists") return <span className="pill">verified: exists</span>;
-    if (s === "not_found") return <span className="pill">verified: not found</span>;
-    if (s === "checking") return <span className="pill">checking…</span>;
-    if (s === "unavailable") return <span className="pill">verify unavailable</span>;
+  function badge(value: CheckStatus) {
+    if (value === "exists") return <span className="pill">verified: exists</span>;
+    if (value === "not_found") return <span className="pill">verified: not found</span>;
+    if (value === "checking") return <span className="pill">checking...</span>;
+    if (value === "unavailable") return <span className="pill">verify unavailable</span>;
     return <span className="pill">not verified</span>;
   }
 
-  const filteredItems = items.filter((it) => visibleItems.has(it.id));
+  const filteredItems = items.filter((item) => visibleItems.has(item.id));
 
   return (
     <div>
@@ -105,7 +113,7 @@ export function UsernameFinder() {
 
       {!canRun && username.trim() ? (
         <ResultBox tone="warn" title="Validation">
-          Use 2–30 chars: letters, digits, dot, underscore, hyphen. No spaces.
+          Use 2-30 chars: letters, digits, dot, underscore, hyphen. No spaces.
         </ResultBox>
       ) : null}
 
@@ -120,16 +128,16 @@ export function UsernameFinder() {
       {filteredItems.length > 0 ? (
         <ResultBox tone="neutral" title="Profile links (awareness)">
           <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.72)" }}>
-            Ethical OSINT: Results shown after verification. Verification is available only for a small set of platforms with safe public APIs.
+            Ethical OSINT: Results shown after verification. Verification is available only for a small set of platforms
+            with safe public APIs.
           </div>
           <ul>
-            {filteredItems.map((it) => (
-              <li key={it.id} style={{ marginBottom: 6 }}>
-                <a href={it.url} target="_blank" rel="noreferrer">
-                  {it.label}
+            {filteredItems.map((item) => (
+              <li key={item.id} style={{ marginBottom: 6 }}>
+                <a href={item.url} target="_blank" rel="noreferrer">
+                  {item.label}
                 </a>{" "}
-                — <span style={{ color: "rgba(255,255,255,0.72)" }}>{it.url}</span>{" "}
-                {badge(status[it.id] ?? "unknown")}
+                - <span style={{ color: "rgba(255,255,255,0.72)" }}>{item.url}</span> {badge(status[item.id] ?? "unknown")}
               </li>
             ))}
           </ul>

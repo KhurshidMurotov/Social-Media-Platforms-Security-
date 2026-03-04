@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { isValidEmail } from "@/lib/validators";
+import { sendError, sendOk, mapUpstreamStatus, type ApiResponse } from "@/lib/apiResponse";
+import { fetchWithTimeout } from "@/lib/fetchWithTimeout";
 import { rateLimit } from "@/lib/rateLimit";
+import { isValidEmail } from "@/lib/validators";
 
 type BreachSummary = {
   Name: string;
@@ -9,45 +11,75 @@ type BreachSummary = {
   Domain?: string;
 };
 
+type LeakProvider = "hibp" | "leakcheck";
+
+type EmailLeakData = {
+  provider: LeakProvider;
+  found: boolean;
+  breaches: BreachSummary[];
+};
+
+class UpstreamServiceError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+function getClientIp(req: NextApiRequest) {
+  return (
+    (typeof req.headers["x-forwarded-for"] === "string" &&
+      req.headers["x-forwarded-for"].split(",")[0]?.trim()) ||
+    req.socket.remoteAddress ||
+    "unknown"
+  );
+}
+
 async function queryHibp(email: string, apiKey: string): Promise<{ found: boolean; breaches: BreachSummary[] }> {
   const url = `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}?truncateResponse=false`;
-  const hibpRes = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       "hibp-api-key": apiKey,
       "user-agent": "social-media-security-toolkit (academic project)"
     }
   });
 
-  if (hibpRes.status === 404) {
+  if (response.status === 404) {
     return { found: false, breaches: [] };
   }
 
-  if (!hibpRes.ok) {
-    const text = await hibpRes.text();
-    throw new Error(`HIBP request failed (${hibpRes.status}). ${text}`.slice(0, 400));
+  if (!response.ok) {
+    const mapped = mapUpstreamStatus(response.status);
+    const code = mapped === 401 || mapped === 403 ? "UPSTREAM_AUTH_FAILED" : "UPSTREAM_REQUEST_FAILED";
+    throw new UpstreamServiceError(mapped, code, `HIBP request failed with status ${response.status}.`);
   }
 
-  const breaches = (await hibpRes.json()) as unknown;
-  if (!Array.isArray(breaches)) {
-    throw new Error("Unexpected HIBP response");
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) {
+    throw new UpstreamServiceError(502, "INVALID_UPSTREAM_RESPONSE", "HIBP returned an unexpected response format.");
   }
 
-  const simplified = breaches.map((b) => {
-    const obj = typeof b === "object" && b !== null ? (b as Record<string, unknown>) : {};
-    return {
-      Name: String(obj.Name ?? ""),
-      Title: obj.Title ? String(obj.Title) : undefined,
-      Domain: obj.Domain ? String(obj.Domain) : undefined,
-      BreachDate: obj.BreachDate ? String(obj.BreachDate) : undefined
-    };
-  });
+  const breaches = payload
+    .map((item) => {
+      const obj = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+      return {
+        Name: String(obj.Name ?? ""),
+        Title: obj.Title ? String(obj.Title) : undefined,
+        Domain: obj.Domain ? String(obj.Domain) : undefined,
+        BreachDate: obj.BreachDate ? String(obj.BreachDate) : undefined
+      };
+    })
+    .filter((breach) => breach.Name);
 
-  return { found: true, breaches: simplified };
+  return { found: breaches.length > 0, breaches };
 }
 
 async function queryLeakCheck(email: string, apiKey: string): Promise<{ found: boolean; breaches: BreachSummary[] }> {
   const url = `https://leakcheck.io/api/v2/query/${encodeURIComponent(email)}?type=email`;
-  const r = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: {
       Accept: "application/json",
       "X-API-Key": apiKey,
@@ -55,117 +87,90 @@ async function queryLeakCheck(email: string, apiKey: string): Promise<{ found: b
     }
   });
 
-  if (r.status === 404) return { found: false, breaches: [] };
-
-  if (!r.ok) {
-    const text = await r.text();
-    // Common when a key is missing/invalid or plan isn't active.
-    if (r.status === 401 || text.includes("Invalid X-API-Key")) {
-      throw new Error("LEAKCHECK_INVALID_KEY");
-    }
-    throw new Error(`LeakCheck request failed (${r.status}). ${text}`.slice(0, 400));
+  if (response.status === 404) {
+    return { found: false, breaches: [] };
   }
 
-  const json = (await r.json()) as unknown;
-  const obj = typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
-  const found = Number(obj.found ?? 0);
-  const result = Array.isArray(obj.result) ? obj.result : [];
+  if (!response.ok) {
+    const mapped = mapUpstreamStatus(response.status);
+    const code = mapped === 401 || mapped === 403 ? "UPSTREAM_AUTH_FAILED" : "UPSTREAM_REQUEST_FAILED";
+    throw new UpstreamServiceError(mapped, code, `LeakCheck request failed with status ${response.status}.`);
+  }
 
-  // IMPORTANT: do not expose compromised fields (passwords, etc). Only show source info.
-  const breaches: BreachSummary[] = result
+  const payload = (await response.json()) as unknown;
+  const root = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+  const found = Number(root.found ?? 0);
+  const result = Array.isArray(root.result) ? root.result : [];
+
+  const breaches = result
     .map((row) => {
-      const rowObj = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : {};
-      const sourceObj =
-        typeof rowObj.source === "object" && rowObj.source !== null
-          ? (rowObj.source as Record<string, unknown>)
+      const item = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : {};
+      const source =
+        typeof item.source === "object" && item.source !== null
+          ? (item.source as Record<string, unknown>)
           : {};
-      const name = sourceObj.name ? String(sourceObj.name) : "Unknown source";
-      const breachDate = sourceObj.breach_date ? String(sourceObj.breach_date) : undefined;
+      const name = source.name ? String(source.name) : "Unknown source";
+      const breachDate = source.breach_date ? String(source.breach_date) : undefined;
       return {
         Name: name,
         Title: name,
         BreachDate: breachDate
       };
     })
-    .filter((b) => b.Name);
+    .filter((breach) => breach.Name);
 
   return { found: found > 0, breaches };
 }
 
-async function queryLeakCheckPublic(email: string): Promise<{ found: boolean; breaches: BreachSummary[] }> {
-  const url = `https://leakcheck.io/api/public?check=${encodeURIComponent(email)}`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!r.ok) {
-    const text = await r.text();
-    throw new Error(`LeakCheck public request failed (${r.status}). ${text}`.slice(0, 400));
-  }
-
-  const json = (await r.json()) as unknown;
-  const obj = typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
-  const found = Number(obj.found ?? 0);
-  const sources = Array.isArray(obj.sources) ? obj.sources : [];
-  const breaches: BreachSummary[] = sources
-    .map((s) => {
-      const src = typeof s === "object" && s !== null ? (s as Record<string, unknown>) : {};
-      const name = src.name ? String(src.name) : "Unknown source";
-      const date = src.date ? String(src.date) : undefined;
-      return { Name: name, Title: name, BreachDate: date };
-    })
-    .filter((b) => b.Name);
-
-  return { found: found > 0, breaches };
-}
-
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse<EmailLeakData>>) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
-    return res.status(405).json({ ok: false, error: "Method not allowed" });
+    return sendError(res, 405, "METHOD_NOT_ALLOWED", "Method not allowed.");
   }
 
   const emailRaw = typeof req.query.email === "string" ? req.query.email : "";
   const email = emailRaw.trim();
   if (!isValidEmail(email)) {
-    return res.status(400).json({ ok: false, error: "Invalid email" });
+    return sendError(res, 400, "INVALID_INPUT", "Please provide a valid email address.");
   }
 
-  const ip =
-    (typeof req.headers["x-forwarded-for"] === "string" && req.headers["x-forwarded-for"].split(",")[0]?.trim()) ||
-    req.socket.remoteAddress ||
-    "unknown";
-
-  const rl = rateLimit({ key: `hibp:${ip}`, limit: 10, windowMs: 60_000 });
+  const rl = rateLimit({ key: `hibp:${getClientIp(req)}`, limit: 10, windowMs: 60_000 });
   if (!rl.ok) {
-    res.setHeader("Retry-After", String(rl.retryAfterSeconds));
-    return res.status(429).json({ ok: false, error: "Too many requests. Please retry later." });
+    return sendError(res, 429, "RATE_LIMITED", "Too many requests. Please retry later.", {
+      "Retry-After": String(rl.retryAfterSeconds)
+    });
   }
 
   const hibpKey = process.env.HIBP_API_KEY;
   const leakCheckKey = process.env.LEAKCHECK_API_KEY;
-  // Note: LeakCheck also has a Public API (no key). We'll use it as a safe fallback.
+
+  if (!hibpKey && !leakCheckKey) {
+    return sendError(
+      res,
+      503,
+      "MISSING_API_KEY",
+      "Email leak checker is not configured. Set HIBP_API_KEY or LEAKCHECK_API_KEY."
+    );
+  }
 
   try {
-    // Prefer HIBP when configured; otherwise try LeakCheck Pro, then LeakCheck Public.
-    let data: { found: boolean; breaches: BreachSummary[] } | null = null;
-
     if (hibpKey) {
-      data = await queryHibp(email, hibpKey);
-    } else if (leakCheckKey) {
-      try {
-        data = await queryLeakCheck(email, leakCheckKey);
-      } catch (e) {
-        if (e instanceof Error && e.message === "LEAKCHECK_INVALID_KEY") {
-          data = await queryLeakCheckPublic(email);
-        } else {
-          throw e;
-        }
-      }
-    } else {
-      data = await queryLeakCheckPublic(email);
+      const data = await queryHibp(email, hibpKey);
+      return sendOk(res, { provider: "hibp", found: data.found, breaches: data.breaches });
     }
 
-    return res.status(200).json({ ok: true, found: data.found, breaches: data.breaches });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e instanceof Error ? e.message : "Unknown error" });
+    const data = await queryLeakCheck(email, leakCheckKey as string);
+    return sendOk(res, { provider: "leakcheck", found: data.found, breaches: data.breaches });
+  } catch (error) {
+    if (error instanceof UpstreamServiceError) {
+      return sendError(res, error.status, error.code, error.message);
+    }
+
+    if (error instanceof Error && error.message === "UPSTREAM_TIMEOUT") {
+      return sendError(res, 503, "UPSTREAM_TIMEOUT", "Upstream provider timed out.");
+    }
+
+    return sendError(res, 502, "UPSTREAM_REQUEST_FAILED", "Failed to fetch data from upstream provider.");
   }
 }
 

@@ -1,5 +1,4 @@
 import Head from "next/head";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { APP_NAME, DISCLAIMER, PRIVACY_NOTICE } from "@/lib/constants";
 
@@ -57,4 +56,3 @@ export function Layout(props: { children: ReactNode }) {
     </>
   );
 }
-
