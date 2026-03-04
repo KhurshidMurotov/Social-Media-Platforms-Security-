@@ -5,7 +5,7 @@ Educational web toolkit for social media cybersecurity awareness.
 ## Features
 
 - Password Strength Checker (client-side)
-- Email Leak Checker (Have I Been Pwned or LeakCheck via server-side proxy)
+- Email Leak Checker (LeakCheck Public API)
 - Phishing/Malicious URL Scanner (VirusTotal via server-side proxy)
 - OSINT Username Finder (profile links + limited verification via safe public APIs)
 
@@ -30,14 +30,10 @@ Create `.env.local` from `.env.example`.
 - `VT_API_KEY`  
   Used by `/api/vt-url` for VirusTotal URL scanning.
 
-### Conditionally required
+### Not required for email checker
 
-At least one of the following must be set for `/api/hibp`:
-
-- `HIBP_API_KEY` (Have I Been Pwned API key)
-- `LEAKCHECK_API_KEY` (LeakCheck API key)
-
-If neither email provider key is set, the API returns `503` with code `MISSING_API_KEY`.
+- `/api/email-leak` uses LeakCheck Public API and does not require any API key.
+- Powered by LeakCheck.
 
 ## Local Development
 
@@ -61,7 +57,6 @@ npm test
 Set environment variables in Vercel Project Settings:
 
 - `VT_API_KEY`
-- `HIBP_API_KEY` or `LEAKCHECK_API_KEY`
 
 Then deploy normally with Vercel.
 
@@ -82,4 +77,3 @@ git diff --staged
 ```bash
 rg -n "API_KEY|SECRET|TOKEN" src README.md .env.example
 ```
-

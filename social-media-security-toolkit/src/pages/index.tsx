@@ -23,7 +23,7 @@ export default function HomePage() {
         <div className="span-12" id="email-leak">
           <ModuleCard
             title="Email Leak Checker"
-            description="Checks whether an email appears in known breach datasets (requires HIBP_API_KEY or LEAKCHECK_API_KEY)."
+            description="Checks whether an email appears in known breach datasets using LeakCheck Public API."
           >
             <EmailLeakChecker />
           </ModuleCard>
@@ -50,4 +50,3 @@ export default function HomePage() {
     </Layout>
   );
 }
-

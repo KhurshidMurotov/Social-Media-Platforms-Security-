@@ -10,7 +10,7 @@ type BreachSummary = {
 };
 
 type EmailLeakData = {
-  provider: "hibp" | "leakcheck";
+  provider: "leakcheck";
   found: boolean;
   breaches: BreachSummary[];
 };
@@ -22,8 +22,7 @@ type ApiError = {
 
 type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
-function providerLabel(provider: EmailLeakData["provider"]) {
-  if (provider === "hibp") return "Have I Been Pwned";
+function providerLabel() {
   return "LeakCheck";
 }
 
@@ -39,7 +38,7 @@ export function EmailLeakChecker() {
     setResult(null);
 
     try {
-      const response = await fetch(`/api/hibp?email=${encodeURIComponent(email.trim())}`);
+      const response = await fetch(`/api/email-leak?email=${encodeURIComponent(email.trim())}`);
       const payload = (await response.json()) as ApiResponse<EmailLeakData>;
       setResult(payload);
     } catch (error) {
@@ -79,7 +78,7 @@ export function EmailLeakChecker() {
         result.ok ? (
           <>
             <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 13 }}>
-              Provider: <strong>{providerLabel(result.data.provider)}</strong>
+              Provider: <strong>{providerLabel()}</strong>
             </div>
 
             {result.data.found ? (
@@ -112,4 +111,3 @@ export function EmailLeakChecker() {
     </div>
   );
 }
-
