@@ -94,6 +94,10 @@ function extractVendors(input: unknown): VtVendor[] {
   return vendors;
 }
 
+function hasUsableStats(stats: VtStats): boolean {
+  return stats.harmless + stats.malicious + stats.suspicious + stats.undetected + stats.timeout > 0;
+}
+
 function getVtError(status: number, details?: string): { status: number; code: VtErrorCode; message: string } {
   if (status === 401 || status === 403) {
     return {
@@ -264,10 +268,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       const data = getRecord(payload.data);
       const attributes = getRecord(data.attributes);
       const stats = toVtStats(attributes.last_analysis_stats);
-      const vendors = extractVendors(attributes.last_analysis_results);
-      const responseData: VtUrlData = { verdict: computeVerdict(stats), stats, vendors };
-      writeCache(url, responseData);
-      return sendOk(res, responseData);
+      if (hasUsableStats(stats)) {
+        const vendors = extractVendors(attributes.last_analysis_results);
+        const responseData: VtUrlData = { verdict: computeVerdict(stats), stats, vendors };
+        writeCache(url, responseData);
+        return sendOk(res, responseData);
+      }
     }
 
     if (lookupRes.status !== 404) {
@@ -325,10 +331,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       }
     }
 
-    return sendError(res, 503, "UPSTREAM_TIMEOUT", "VirusTotal analysis not ready yet. Please retry.");
+    const finalLookupRes = await vtRequest(apiKey, `/urls/${encodeURIComponent(urlId)}`, { method: "GET" });
+    if (finalLookupRes.ok) {
+      const payload = getRecord(await finalLookupRes.json());
+      const data = getRecord(payload.data);
+      const attributes = getRecord(data.attributes);
+      const stats = toVtStats(attributes.last_analysis_stats);
+      if (hasUsableStats(stats)) {
+        const vendors = extractVendors(attributes.last_analysis_results);
+        const responseData: VtUrlData = { verdict: computeVerdict(stats), stats, vendors };
+        writeCache(url, responseData);
+        return sendOk(res, responseData);
+      }
+    }
+
+    return sendError(res, 202, "VT_ANALYSIS_PENDING", "VirusTotal is still analyzing this URL. Retrying...");
   } catch (error) {
     if (error instanceof Error && error.message === "UPSTREAM_TIMEOUT") {
-      return sendError(res, 503, "UPSTREAM_TIMEOUT", "VirusTotal analysis not ready yet. Please retry.");
+      return sendError(res, 202, "VT_ANALYSIS_PENDING", "VirusTotal is still analyzing this URL. Retrying...");
     }
     return sendError(res, 502, "UPSTREAM_REQUEST_FAILED", "Failed to reach VirusTotal.");
   }

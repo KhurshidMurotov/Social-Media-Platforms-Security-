@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ResultBox } from "@/components/ResultBox";
 import { normalizeUrl } from "@/lib/validators";
 
@@ -30,10 +30,16 @@ type ApiError = {
 
 type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
+const MAX_PENDING_RETRIES = 10;
+const PENDING_RETRY_DELAY_MS = 1700;
+
 export function UrlScanner() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResponse<VtUrlData | LegacyVtData> | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<number | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scanSessionRef = useRef(0);
 
   const normalized = normalizeUrl(input);
   const examples: Array<{ url: string; note?: string }> = [
@@ -51,20 +57,73 @@ export function UrlScanner() {
     { url: "http://unsecured-site.info/enter-details" }
   ];
 
-  async function scan() {
-    if (!normalized) return;
-    setLoading(true);
-    setResult(null);
+  function clearRetryTimer() {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }
+
+  function cancelPendingScan() {
+    scanSessionRef.current += 1;
+    clearRetryTimer();
+    setPendingAttempt(null);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      clearRetryTimer();
+      scanSessionRef.current += 1;
+    };
+  }, []);
+
+  async function runScanAttempt(scanSession: number, url: string, attempt: number) {
+    if (scanSession !== scanSessionRef.current) return;
 
     try {
       const response = await fetch("/api/vt-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: normalized })
+        body: JSON.stringify({ url })
       });
       const payload = (await response.json()) as ApiResponse<VtUrlData | LegacyVtData>;
+
+      if (scanSession !== scanSessionRef.current) return;
+
+      if (payload.ok) {
+        setResult(payload);
+        setPendingAttempt(null);
+        setLoading(false);
+        return;
+      }
+
+      if (payload.error.code === "VT_ANALYSIS_PENDING") {
+        if (attempt < MAX_PENDING_RETRIES) {
+          setPendingAttempt(attempt);
+          retryTimerRef.current = setTimeout(() => {
+            void runScanAttempt(scanSession, url, attempt + 1);
+          }, PENDING_RETRY_DELAY_MS);
+          return;
+        }
+
+        setResult({
+          ok: false,
+          error: {
+            code: "VT_ANALYSIS_PENDING",
+            message: "Still analyzing. Please try again in a few seconds."
+          }
+        });
+        setPendingAttempt(null);
+        setLoading(false);
+        return;
+      }
+
       setResult(payload);
+      setPendingAttempt(null);
+      setLoading(false);
     } catch (error) {
+      if (scanSession !== scanSessionRef.current) return;
       setResult({
         ok: false,
         error: {
@@ -72,9 +131,19 @@ export function UrlScanner() {
           message: error instanceof Error ? error.message : "Unknown network error."
         }
       });
-    } finally {
+      setPendingAttempt(null);
       setLoading(false);
     }
+  }
+
+  async function scan() {
+    if (!normalized) return;
+    cancelPendingScan();
+    const scanSession = scanSessionRef.current;
+    setResult(null);
+    setLoading(true);
+    setPendingAttempt(1);
+    await runScanAttempt(scanSession, normalized, 1);
   }
 
   const tone =
@@ -115,7 +184,10 @@ export function UrlScanner() {
           type="text"
           value={input}
           placeholder="Enter a URL (e.g. https://example.com)"
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            cancelPendingScan();
+          }}
         />
         <button disabled={!normalized || loading} onClick={scan}>
           {loading ? "Scanning..." : "Scan URL"}
@@ -123,7 +195,9 @@ export function UrlScanner() {
         {loading ? (
           <span className="scan-loading" aria-live="polite">
             <span className="scan-spinner" aria-hidden="true" />
-            Scanning with VirusTotal...
+            {pendingAttempt
+              ? `VirusTotal is still analyzing... (attempt ${pendingAttempt}/${MAX_PENDING_RETRIES})`
+              : "Scanning with VirusTotal..."}
           </span>
         ) : null}
         {normalized ? <span className="pill">{new URL(normalized).hostname}</span> : null}
