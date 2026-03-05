@@ -145,10 +145,14 @@ export function UsernameFinder() {
           <ul>
             {filteredItems.map((item) => (
               <li key={item.id} style={{ marginBottom: 6 }}>
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  {item.label}
-                </a>{" "}
-                - <span style={{ color: "rgba(255,255,255,0.72)" }}>{item.url}</span> {badge(status[item.id] ?? "unknown")}
+                {status[item.id] === "not_found" ? (
+                  <span>{item.label}</span>
+                ) : (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer">
+                    {item.label}
+                  </a>
+                )}{" "}
+                {badge(status[item.id] ?? "unknown")}
               </li>
             ))}
           </ul>
