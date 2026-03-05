@@ -310,6 +310,11 @@ button:disabled {
   font-size: 13px;
 }
 
+.scan-loading-hint {
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
 .scan-spinner {
   width: 14px;
   height: 14px;

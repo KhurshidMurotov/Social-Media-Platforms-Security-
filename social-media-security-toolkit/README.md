@@ -60,6 +60,19 @@ Set environment variables in Vercel Project Settings:
 
 Then deploy normally with Vercel.
 
+## VirusTotal (VT) limits and behavior
+
+- VirusTotal free tier is rate-limited and can be slow under load.
+- Scans are asynchronous, so you may briefly see "Analyzing..." before final results are ready.
+- This app uses a server-side proxy, auto-retries when VT analysis is pending, and keeps a 15-minute in-memory cache to reduce quota usage.
+- "Did not respond (timeout)" means some vendor engines did not return in time; this is not a guarantee of safety.
+
+Troubleshooting:
+
+- Ensure `VT_API_KEY` is set in Vercel/local env.
+- Avoid scanning private IPs or reserved domains.
+- Some fictional training domains may not exist and can be rejected by VT.
+
 ## Security: Secrets
 
 - Never commit `.env.local`

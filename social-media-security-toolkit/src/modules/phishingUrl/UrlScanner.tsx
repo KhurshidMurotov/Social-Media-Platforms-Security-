@@ -43,15 +43,15 @@ export function UrlScanner() {
 
   const normalized = normalizeUrl(input);
   const examples: Array<{ url: string; note?: string }> = [
-    { url: "https://login-microsoftonline-com.account-verify.example.com/secure" },
+    { url: "https://login.microsoftonline.com" },
     { url: "http://bit.ly/suspicious-redirect-xyz" },
     { url: "https://amaz0n.com/deals/special-offer" },
-    { url: "https://paypal.com.security-check.example.com/signin" },
+    { url: "https://example.com/login" },
     { url: "http://192.168.1.100:8080/update-required", note: "Private IP (not scannable by VirusTotal)" },
-    { url: "https://appleid.apple.com.verify-session.example.com/reset" },
-    { url: "http://free-gift-claim.tk/claim-now" },
-    { url: "https://dropbox.com.share-file.example.com/login" },
-    { url: "https://banking-update-required.example.com/confirm" },
+    { url: "https://accounts.google.com" },
+    { url: "https://github.com/login" },
+    { url: "http://free-gift-claim.tk/claim-now", note: "May not exist; VT can reject" },
+    { url: "https://banking-update-required.example.com/confirm", note: "May not exist; VT can reject" },
     { url: "http://suspicious-short.link/abc123xyz" },
     { url: "https://faceb00k.com/login/verify-account" },
     { url: "http://unsecured-site.info/enter-details" }
@@ -196,10 +196,11 @@ export function UrlScanner() {
           <span className="scan-loading" aria-live="polite">
             <span className="scan-spinner" aria-hidden="true" />
             {pendingAttempt
-              ? `VirusTotal is still analyzing... (attempt ${pendingAttempt}/${MAX_PENDING_RETRIES})`
+              ? `Analyzing with VirusTotal... (${pendingAttempt}/${MAX_PENDING_RETRIES})`
               : "Scanning with VirusTotal..."}
           </span>
         ) : null}
+        {loading ? <span className="scan-loading-hint">This can take ~5-20 seconds on the free plan.</span> : null}
         {normalized ? <span className="pill">{new URL(normalized).hostname}</span> : null}
       </div>
 
