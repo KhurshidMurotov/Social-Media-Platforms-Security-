@@ -205,6 +205,10 @@ function writeCache(url: string, data: VtUrlData) {
   }
 }
 
+function returnPending(res: NextApiResponse<ApiResponse<VtUrlData>>) {
+  return sendError(res, 202, "VT_ANALYSIS_PENDING", "VirusTotal is still analyzing this URL.");
+}
+
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -326,6 +330,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         return sendOk(res, responseData);
       }
 
+      if (status === "queued" || status === "in-progress" || status === "running") {
+        // Keep polling until complete or max attempts reached.
+      }
+
       if (attempt < maxAttempts - 1) {
         await sleep(delayMs);
       }
@@ -345,10 +353,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       }
     }
 
-    return sendError(res, 202, "VT_ANALYSIS_PENDING", "VirusTotal is still analyzing this URL. Retrying...");
+    return returnPending(res);
   } catch (error) {
     if (error instanceof Error && error.message === "UPSTREAM_TIMEOUT") {
-      return sendError(res, 202, "VT_ANALYSIS_PENDING", "VirusTotal is still analyzing this URL. Retrying...");
+      return returnPending(res);
     }
     return sendError(res, 502, "UPSTREAM_REQUEST_FAILED", "Failed to reach VirusTotal.");
   }

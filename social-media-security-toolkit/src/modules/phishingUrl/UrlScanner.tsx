@@ -33,13 +33,16 @@ type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 const MAX_PENDING_RETRIES = 10;
 const PENDING_RETRY_DELAY_MS = 1700;
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function UrlScanner() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ApiResponse<VtUrlData | LegacyVtData> | null>(null);
   const [pendingAttempt, setPendingAttempt] = useState<number | null>(null);
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scanSessionRef = useRef(0);
+  const scanTokenRef = useRef(0);
 
   const normalized = normalizeUrl(input);
   const examples: Array<{ url: string; note?: string }> = [
@@ -57,93 +60,92 @@ export function UrlScanner() {
     { url: "http://unsecured-site.info/enter-details" }
   ];
 
-  function clearRetryTimer() {
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-  }
-
-  function cancelPendingScan() {
-    scanSessionRef.current += 1;
-    clearRetryTimer();
-    setPendingAttempt(null);
-    setLoading(false);
-  }
-
   useEffect(() => {
     return () => {
-      clearRetryTimer();
-      scanSessionRef.current += 1;
+      scanTokenRef.current += 1;
     };
   }, []);
 
-  async function runScanAttempt(scanSession: number, url: string, attempt: number) {
-    if (scanSession !== scanSessionRef.current) return;
+  async function scanWithRetries(url: string, token: number, maxRetries = MAX_PENDING_RETRIES, delayMs = PENDING_RETRY_DELAY_MS) {
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      if (token !== scanTokenRef.current) return;
+      setPendingAttempt(attempt);
 
-    try {
-      const response = await fetch("/api/vt-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
-      });
-      const payload = (await response.json()) as ApiResponse<VtUrlData | LegacyVtData>;
+      try {
+        const response = await fetch("/api/vt-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
+        const payload = (await response.json()) as ApiResponse<VtUrlData | LegacyVtData>;
 
-      if (scanSession !== scanSessionRef.current) return;
+        if (token !== scanTokenRef.current) return;
 
-      if (payload.ok) {
+        if (payload.ok) {
+          setResult(payload);
+          setPendingAttempt(null);
+          setLoading(false);
+          return;
+        }
+
+        if (payload.error.code === "VT_ANALYSIS_PENDING") {
+          if (attempt < maxRetries) {
+            await sleep(delayMs);
+            continue;
+          }
+          setResult({
+            ok: false,
+            error: {
+              code: "VT_ANALYSIS_PENDING",
+              message: "Still analyzing. Please try again in a few seconds."
+            }
+          });
+          setPendingAttempt(null);
+          setLoading(false);
+          return;
+        }
+
+        if (payload.error.code === "UPSTREAM_RATE_LIMITED") {
+          setResult({
+            ok: false,
+            error: {
+              code: payload.error.code,
+              message: payload.error.message
+            }
+          });
+          setPendingAttempt(null);
+          setLoading(false);
+          return;
+        }
+
         setResult(payload);
         setPendingAttempt(null);
         setLoading(false);
         return;
-      }
-
-      if (payload.error.code === "VT_ANALYSIS_PENDING") {
-        if (attempt < MAX_PENDING_RETRIES) {
-          setPendingAttempt(attempt);
-          retryTimerRef.current = setTimeout(() => {
-            void runScanAttempt(scanSession, url, attempt + 1);
-          }, PENDING_RETRY_DELAY_MS);
-          return;
-        }
-
+      } catch (error) {
+        if (token !== scanTokenRef.current) return;
         setResult({
           ok: false,
           error: {
-            code: "VT_ANALYSIS_PENDING",
-            message: "Still analyzing. Please try again in a few seconds."
+            code: "NETWORK_ERROR",
+            message: error instanceof Error ? error.message : "Unknown network error."
           }
         });
         setPendingAttempt(null);
         setLoading(false);
         return;
       }
-
-      setResult(payload);
-      setPendingAttempt(null);
-      setLoading(false);
-    } catch (error) {
-      if (scanSession !== scanSessionRef.current) return;
-      setResult({
-        ok: false,
-        error: {
-          code: "NETWORK_ERROR",
-          message: error instanceof Error ? error.message : "Unknown network error."
-        }
-      });
-      setPendingAttempt(null);
-      setLoading(false);
     }
   }
 
   async function scan() {
     if (!normalized) return;
-    cancelPendingScan();
-    const scanSession = scanSessionRef.current;
+    scanTokenRef.current += 1;
+    const token = scanTokenRef.current;
     setResult(null);
     setLoading(true);
     setPendingAttempt(1);
-    await runScanAttempt(scanSession, normalized, 1);
+    await scanWithRetries(normalized, token);
   }
 
   const tone =
@@ -166,15 +168,16 @@ export function UrlScanner() {
   const showRateLimitHint =
     !!errorMessage &&
     (errorMessage.toLowerCase().includes("rate limit") || errorMessage.toLowerCase().includes("upstream_rate_limited"));
-  const summaryRows = result && result.ok
-    ? [
-        { key: "harmless", label: "Marked safe by", value: Number(result.data.stats.harmless ?? 0) },
-        { key: "malicious", label: "Flagged as dangerous by", value: Number(result.data.stats.malicious ?? 0) },
-        { key: "suspicious", label: "Flagged as suspicious by", value: Number(result.data.stats.suspicious ?? 0) },
-        { key: "undetected", label: "No verdict from", value: Number(result.data.stats.undetected ?? 0) },
-        { key: "timeout", label: "Did not respond (timeout)", value: Number(result.data.stats.timeout ?? 0) }
-      ]
-    : [];
+  const summaryRows =
+    result && result.ok
+      ? [
+          { key: "harmless", label: "Marked safe by", value: Number(result.data.stats.harmless ?? 0) },
+          { key: "malicious", label: "Flagged as dangerous by", value: Number(result.data.stats.malicious ?? 0) },
+          { key: "suspicious", label: "Flagged as suspicious by", value: Number(result.data.stats.suspicious ?? 0) },
+          { key: "undetected", label: "No verdict from", value: Number(result.data.stats.undetected ?? 0) },
+          { key: "timeout", label: "Did not respond (timeout)", value: Number(result.data.stats.timeout ?? 0) }
+        ]
+      : [];
   const totalVendorsChecked = summaryRows.reduce((sum, row) => sum + row.value, 0);
 
   return (
@@ -186,7 +189,9 @@ export function UrlScanner() {
           placeholder="Enter a URL (e.g. https://example.com)"
           onChange={(e) => {
             setInput(e.target.value);
-            cancelPendingScan();
+            scanTokenRef.current += 1;
+            setPendingAttempt(null);
+            setLoading(false);
           }}
         />
         <button disabled={!normalized || loading} onClick={scan}>
@@ -287,3 +292,4 @@ export function UrlScanner() {
     </div>
   );
 }
+
