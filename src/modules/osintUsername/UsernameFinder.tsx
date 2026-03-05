@@ -101,7 +101,7 @@ export function UsernameFinder() {
     return <span className="pill">checking...</span>;
   }
 
-  const filteredItems = items.filter((item) => visibleItems.has(item.id));
+  const filteredItems = items.filter((item) => visibleItems.has(item.id) && (status[item.id] ?? "unknown") !== "not_found");
 
   return (
     <div>
