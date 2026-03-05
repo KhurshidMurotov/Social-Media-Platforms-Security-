@@ -1,8 +1,13 @@
 import Head from "next/head";
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { APP_NAME, DISCLAIMER, PRIVACY_NOTICE } from "@/lib/constants";
 
 export function Layout(props: { children: ReactNode }) {
+  const router = useRouter();
+  const isToolsPage = router.pathname === "/tools";
+
   return (
     <>
       <Head>
@@ -15,28 +20,41 @@ export function Layout(props: { children: ReactNode }) {
         <header className="header">
           <div className="header__inner">
             <div className="header__bar">
-              <a href="#top" className="header__brand">
+              <Link href="/" className="header__brand">
                 <h1 className="title">{APP_NAME}</h1>
-              </a>
+              </Link>
               <nav className="nav">
-                <a href="#password" className="nav__link">
-                  Password
-                </a>
-                <a href="#email-leak" className="nav__link">
-                  Email Leak
-                </a>
-                <a href="#url-scanner" className="nav__link">
-                  URL Scanner
-                </a>
-                <a href="#username-finder" className="nav__link">
-                  Username Finder
-                </a>
-                <a href="#ethics" className="nav__link">
-                  Ethics
-                </a>
+                <Link href="/tools" className="nav__link">
+                  Tools
+                </Link>
+                {!isToolsPage ? (
+                  <>
+                    <Link href="/" className="nav__link">
+                      Home
+                    </Link>
+                    <Link href="/ethics" className="nav__link">
+                      Ethics
+                    </Link>
+                  </>
+                ) : null}
+                {isToolsPage ? (
+                  <Link href="/" className="nav__link nav__link--back">
+                    Back to Home
+                  </Link>
+                ) : null}
               </nav>
             </div>
-            <p className="subtitle">{DISCLAIMER}</p>
+            <div className="header__meta">
+              <p className="subtitle">{DISCLAIMER}</p>
+              <div className="status-ticker" aria-live="polite">
+                <span className="status-ticker__label">SYSTEM STATUS</span>
+                <span className="status-ticker__viewport">
+                  <span className="status-ticker__track">
+                    Awareness Mode Active // No Data Storage // Public API Checks // Verify Before You Trust
+                  </span>
+                </span>
+              </div>
+            </div>
           </div>
         </header>
         <main className="main">{props.children}</main>

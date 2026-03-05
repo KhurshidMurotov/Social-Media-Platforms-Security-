@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ResultBox } from "@/components/ResultBox";
+import { CyberButton } from "@/components/ui/CyberButton";
+import { CyberInput } from "@/components/ui/CyberInput";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { normalizeUrl } from "@/lib/validators";
 
 type VtVerdict = "malicious" | "suspicious" | "clean" | "unknown";
@@ -183,7 +186,7 @@ export function UrlScanner() {
   return (
     <div>
       <div className="row">
-        <input
+        <CyberInput
           type="text"
           value={input}
           placeholder="Enter a URL (e.g. https://example.com)"
@@ -194,9 +197,9 @@ export function UrlScanner() {
             setLoading(false);
           }}
         />
-        <button disabled={!normalized || loading} onClick={scan}>
+        <CyberButton disabled={!normalized || loading} onClick={scan}>
           {loading ? "Scanning..." : "Scan URL"}
-        </button>
+        </CyberButton>
         {loading ? (
           <span className="scan-loading" aria-live="polite">
             <span className="scan-spinner" aria-hidden="true" />
@@ -206,7 +209,7 @@ export function UrlScanner() {
           </span>
         ) : null}
         {loading ? <span className="scan-loading-hint">This can take ~5-20 seconds on the free plan.</span> : null}
-        {normalized ? <span className="pill">{new URL(normalized).hostname}</span> : null}
+        {normalized ? <StatusBadge variant="pending">{new URL(normalized).hostname}</StatusBadge> : null}
       </div>
 
       <ResultBox tone="neutral" title="Example suspicious URLs (non-clickable)">
@@ -292,4 +295,3 @@ export function UrlScanner() {
     </div>
   );
 }
-

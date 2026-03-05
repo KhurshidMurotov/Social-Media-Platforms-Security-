@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ResultBox } from "@/components/ResultBox";
+import { CyberButton } from "@/components/ui/CyberButton";
+import { CyberInput } from "@/components/ui/CyberInput";
 import { isValidEmail } from "@/lib/validators";
 
 type BreachSummary = {
@@ -57,15 +59,15 @@ export function EmailLeakChecker() {
   return (
     <div>
       <div className="row">
-        <input
+        <CyberInput
           type="email"
           value={email}
           placeholder="Enter email"
           onChange={(e) => setEmail(e.target.value)}
         />
-        <button disabled={!canCheck || loading} onClick={onCheck}>
+        <CyberButton disabled={!canCheck || loading} onClick={onCheck}>
           {loading ? "Checking..." : "Check breaches"}
-        </button>
+        </CyberButton>
       </div>
 
       {!canCheck && email.trim() ? (

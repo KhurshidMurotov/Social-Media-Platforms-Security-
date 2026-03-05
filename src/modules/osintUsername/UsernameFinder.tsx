@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { ResultBox } from "@/components/ResultBox";
+import { CyberButton } from "@/components/ui/CyberButton";
+import { CyberInput } from "@/components/ui/CyberInput";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { USERNAME_PLATFORMS } from "@/lib/constants";
 import { isValidUsername } from "@/lib/validators";
 
@@ -94,11 +97,11 @@ export function UsernameFinder() {
   }
 
   function badge(value: CheckStatus) {
-    if (value === "exists") return <span className="pill">found</span>;
-    if (value === "not_found") return <span className="pill">not found</span>;
-    if (value === "checking") return <span className="pill">checking...</span>;
-    if (value === "unavailable") return <span className="pill">check blocked</span>;
-    return <span className="pill">checking...</span>;
+    if (value === "exists") return <StatusBadge variant="safe">found</StatusBadge>;
+    if (value === "not_found") return <StatusBadge variant="warning">not found</StatusBadge>;
+    if (value === "checking") return <StatusBadge variant="pending">checking...</StatusBadge>;
+    if (value === "unavailable") return <StatusBadge variant="blocked">check blocked</StatusBadge>;
+    return <StatusBadge variant="pending">checking...</StatusBadge>;
   }
 
   const filteredItems = items.filter((item) => visibleItems.has(item.id) && (status[item.id] ?? "unknown") !== "not_found");
@@ -106,7 +109,7 @@ export function UsernameFinder() {
   return (
     <div>
       <div className="row">
-        <input
+        <CyberInput
           type="text"
           value={username}
           placeholder="Enter a username (e.g. john_doe)"
@@ -117,9 +120,9 @@ export function UsernameFinder() {
             setIsSearching(false);
           }}
         />
-        <button disabled={!canRun || isSearching} onClick={verifySupported}>
+        <CyberButton disabled={!canRun || isSearching} onClick={verifySupported}>
           {isSearching ? "Searching..." : "Search"}
-        </button>
+        </CyberButton>
       </div>
 
       {!canRun && username.trim() ? (
