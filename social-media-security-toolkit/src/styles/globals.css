@@ -302,6 +302,29 @@ button:disabled {
   font-size: 13px;
 }
 
+.scan-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.scan-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: scan-spin 0.8s linear infinite;
+}
+
+@keyframes scan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .footer {
   padding: 18px 20px 26px;
   color: var(--muted-2);
@@ -313,4 +336,3 @@ button:disabled {
   font-size: 13px;
   line-height: 1.4;
 }
-

@@ -60,7 +60,7 @@ export function EmailLeakChecker() {
         <input
           type="email"
           value={email}
-          placeholder="Enter email (awareness demo)"
+          placeholder="Enter email"
           onChange={(e) => setEmail(e.target.value)}
         />
         <button disabled={!canCheck || loading} onClick={onCheck}>

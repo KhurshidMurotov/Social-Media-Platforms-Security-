@@ -3,12 +3,24 @@ import { ResultBox } from "@/components/ResultBox";
 import { normalizeUrl } from "@/lib/validators";
 
 type VtVerdict = "malicious" | "suspicious" | "clean" | "unknown";
+type VtVendor = { engine: string; category: "malicious" | "suspicious"; result?: string };
 
 type VtUrlData = {
-  url: string;
-  analysisId: string;
+  verdict: "MALICIOUS" | "SUSPICIOUS" | "CLEAN" | "UNKNOWN";
+  stats: {
+    harmless: number;
+    malicious: number;
+    suspicious: number;
+    undetected: number;
+    timeout: number;
+  };
+  vendors: VtVendor[];
+};
+
+type LegacyVtData = {
   verdict: VtVerdict;
   stats: Record<string, number>;
+  vendors?: VtVendor[];
 };
 
 type ApiError = {
@@ -21,22 +33,22 @@ type ApiResponse<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 export function UrlScanner() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ApiResponse<VtUrlData> | null>(null);
+  const [result, setResult] = useState<ApiResponse<VtUrlData | LegacyVtData> | null>(null);
 
   const normalized = normalizeUrl(input);
-  const examples = [
-    "https://login-microsoftonline-com.account-verify.example/secure",
-    "http://bit.ly/suspicious-redirect-xyz",
-    "https://amaz0n.com/deals/special-offer",
-    "https://paypal.com.security-check.invalid/signin",
-    "http://192.168.1.100:8080/update-required",
-    "https://appleid.apple.com.verify-session.example/reset",
-    "http://free-gift-claim.tk/claim-now",
-    "https://dropbox.com.share-file.example/login",
-    "https://banking-update-required.example/confirm",
-    "http://suspicious-short.link/abc123xyz",
-    "https://faceb00k.com/login/verify-account",
-    "http://unsecured-site.info/enter-details"
+  const examples: Array<{ url: string; note?: string }> = [
+    { url: "https://login-microsoftonline-com.account-verify.example.com/secure" },
+    { url: "http://bit.ly/suspicious-redirect-xyz" },
+    { url: "https://amaz0n.com/deals/special-offer" },
+    { url: "https://paypal.com.security-check.example.com/signin" },
+    { url: "http://192.168.1.100:8080/update-required", note: "Private IP (not scannable by VirusTotal)" },
+    { url: "https://appleid.apple.com.verify-session.example.com/reset" },
+    { url: "http://free-gift-claim.tk/claim-now" },
+    { url: "https://dropbox.com.share-file.example.com/login" },
+    { url: "https://banking-update-required.example.com/confirm" },
+    { url: "http://suspicious-short.link/abc123xyz" },
+    { url: "https://faceb00k.com/login/verify-account" },
+    { url: "http://unsecured-site.info/enter-details" }
   ];
 
   async function scan() {
@@ -50,7 +62,7 @@ export function UrlScanner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: normalized })
       });
-      const payload = (await response.json()) as ApiResponse<VtUrlData>;
+      const payload = (await response.json()) as ApiResponse<VtUrlData | LegacyVtData>;
       setResult(payload);
     } catch (error) {
       setResult({
@@ -68,13 +80,33 @@ export function UrlScanner() {
   const tone =
     !result || !result.ok
       ? "neutral"
-      : result.data.verdict === "malicious"
+      : String(result.data.verdict).toUpperCase() === "MALICIOUS"
         ? "bad"
-        : result.data.verdict === "suspicious"
+        : String(result.data.verdict).toUpperCase() === "SUSPICIOUS"
           ? "warn"
-          : result.data.verdict === "clean"
+          : String(result.data.verdict).toUpperCase() === "CLEAN"
             ? "good"
             : "neutral";
+  const errorMessage = result && !result.ok ? result.error.message : "";
+  const showRejectedHint =
+    !!errorMessage &&
+    (errorMessage.toLowerCase().includes("rejected") ||
+      errorMessage.toLowerCase().includes("status 400") ||
+      errorMessage.toLowerCase().includes("invalid") ||
+      errorMessage.toLowerCase().includes("not scannable"));
+  const showRateLimitHint =
+    !!errorMessage &&
+    (errorMessage.toLowerCase().includes("rate limit") || errorMessage.toLowerCase().includes("upstream_rate_limited"));
+  const summaryRows = result && result.ok
+    ? [
+        { key: "harmless", label: "Marked safe by", value: Number(result.data.stats.harmless ?? 0) },
+        { key: "malicious", label: "Flagged as dangerous by", value: Number(result.data.stats.malicious ?? 0) },
+        { key: "suspicious", label: "Flagged as suspicious by", value: Number(result.data.stats.suspicious ?? 0) },
+        { key: "undetected", label: "No verdict from", value: Number(result.data.stats.undetected ?? 0) },
+        { key: "timeout", label: "Did not respond (timeout)", value: Number(result.data.stats.timeout ?? 0) }
+      ]
+    : [];
+  const totalVendorsChecked = summaryRows.reduce((sum, row) => sum + row.value, 0);
 
   return (
     <div>
@@ -88,6 +120,12 @@ export function UrlScanner() {
         <button disabled={!normalized || loading} onClick={scan}>
           {loading ? "Scanning..." : "Scan URL"}
         </button>
+        {loading ? (
+          <span className="scan-loading" aria-live="polite">
+            <span className="scan-spinner" aria-hidden="true" />
+            Scanning with VirusTotal...
+          </span>
+        ) : null}
         {normalized ? <span className="pill">{new URL(normalized).hostname}</span> : null}
       </div>
 
@@ -96,8 +134,8 @@ export function UrlScanner() {
           These are fictional, malicious-looking examples for awareness training.
         </div>
         <ul style={{ margin: 0, paddingLeft: 18 }}>
-          {examples.map((url) => (
-            <li key={url} style={{ marginBottom: 6 }}>
+          {examples.map((item) => (
+            <li key={item.url} style={{ marginBottom: 6 }}>
               <span
                 style={{
                   userSelect: "text",
@@ -105,8 +143,9 @@ export function UrlScanner() {
                     "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
                 }}
               >
-                {url}
+                {item.url}
               </span>
+              {item.note ? <span style={{ color: "rgba(255,255,255,0.6)" }}> - {item.note}</span> : null}
             </li>
           ))}
         </ul>
@@ -120,15 +159,35 @@ export function UrlScanner() {
 
       {result ? (
         result.ok ? (
-          <ResultBox tone={tone} title={`Verdict: ${result.data.verdict.toUpperCase()}`}>
-            <div style={{ marginBottom: 8 }}>Vendor detections (summary):</div>
+          <ResultBox tone={tone} title={`Verdict: ${String(result.data.verdict).toUpperCase()}`}>
+            <div style={{ marginBottom: 8 }}>Scan summary:</div>
             <ul>
-              {Object.entries(result.data.stats).map(([key, value]) => (
-                <li key={key}>
-                  {key}: {value}
+              {summaryRows.map((row) => (
+                <li key={row.key}>
+                  {row.label}: {row.value}
                 </li>
               ))}
             </ul>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)" }}>
+              Total vendors checked: {totalVendorsChecked}
+            </div>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)" }}>
+              VirusTotal aggregates results from multiple scanners. Timeout means some vendors did not return a result in
+              time and is not a guarantee of safety.
+            </div>
+            {result.data.vendors && result.data.vendors.length > 0 ? (
+              <>
+                <div style={{ marginTop: 10, marginBottom: 6 }}>Flagged by these vendors:</div>
+                <ul>
+                  {result.data.vendors.map((vendor) => (
+                    <li key={`${vendor.engine}-${vendor.category}-${vendor.result ?? ""}`}>
+                      {vendor.engine}: {vendor.category}
+                      {vendor.result ? ` (${vendor.result})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
             <div style={{ marginTop: 10, color: "rgba(255,255,255,0.72)" }}>
               Note: this is best-effort and not a guarantee. Always verify the domain and avoid entering credentials on
               suspicious pages.
@@ -136,11 +195,20 @@ export function UrlScanner() {
           </ResultBox>
         ) : (
           <ResultBox tone="warn" title="Unavailable">
-            {result.error.message}
+            <div>{result.error.message}</div>
+            {showRejectedHint ? (
+              <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)" }}>
+                Try a real public URL like https://example.com
+              </div>
+            ) : null}
+            {showRateLimitHint ? (
+              <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)" }}>
+                Free tier limit is low; wait 15-30 seconds and retry.
+              </div>
+            ) : null}
           </ResultBox>
         )
       ) : null}
     </div>
   );
 }
-
