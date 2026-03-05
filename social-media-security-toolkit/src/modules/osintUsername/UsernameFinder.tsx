@@ -8,7 +8,12 @@ type StatusMap = Record<string, CheckStatus>;
 type VisibleItems = Set<string>;
 
 type UsernameCheckData = {
-  exists: boolean;
+  platform: string;
+  username: string;
+  exists: boolean | null;
+  verified: boolean;
+  profileUrl: string;
+  note?: string;
 };
 
 type ApiError = {
@@ -58,7 +63,13 @@ export function UsernameFinder() {
         );
         const payload = (await response.json()) as ApiResponse<UsernameCheckData>;
 
-        const newStatus = payload.ok ? (payload.data.exists ? "exists" : "not_found") : "unavailable";
+        const newStatus = payload.ok
+          ? payload.data.verified
+            ? payload.data.exists
+              ? "exists"
+              : "not_found"
+            : "unavailable"
+          : "unavailable";
         setStatus((prev) => ({
           ...prev,
           [platform.id]: newStatus
@@ -83,11 +94,11 @@ export function UsernameFinder() {
   }
 
   function badge(value: CheckStatus) {
-    if (value === "exists") return <span className="pill">verified: exists</span>;
-    if (value === "not_found") return <span className="pill">verified: not found</span>;
+    if (value === "exists") return <span className="pill">found</span>;
+    if (value === "not_found") return <span className="pill">not found</span>;
     if (value === "checking") return <span className="pill">checking...</span>;
-    if (value === "unavailable") return <span className="pill">verify unavailable</span>;
-    return <span className="pill">not verified</span>;
+    if (value === "unavailable") return <span className="pill">check blocked</span>;
+    return <span className="pill">checking...</span>;
   }
 
   const filteredItems = items.filter((item) => visibleItems.has(item.id));
@@ -146,4 +157,3 @@ export function UsernameFinder() {
     </div>
   );
 }
-

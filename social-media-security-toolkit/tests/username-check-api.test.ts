@@ -54,7 +54,17 @@ describe("GET /api/username-check", () => {
     await handler(req as never, res as never);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ ok: true, data: { exists: true } });
+    expect(res.body).toEqual({
+      ok: true,
+      data: {
+        platform: "github",
+        username: "octocat",
+        exists: true,
+        verified: true,
+        profileUrl: "https://github.com/octocat",
+        note: undefined
+      }
+    });
   });
 
   it("maps upstream error to non-200 failure response", async () => {
@@ -69,10 +79,31 @@ describe("GET /api/username-check", () => {
     expect(res.body).toEqual({
       ok: false,
       error: {
-        code: "UPSTREAM_REQUEST_FAILED",
-        message: "Username verification request failed."
+        code: "UPSTREAM_UNAVAILABLE",
+        message: "Username verification provider is temporarily unavailable."
+      }
+    });
+  });
+
+  it("returns verify unavailable for reddit forbidden", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+
+    const req = createMockReq({ platform: "reddit", username: "someuser" });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      data: {
+        platform: "reddit",
+        username: "someuser",
+        exists: null,
+        verified: false,
+        profileUrl: "https://www.reddit.com/user/someuser/",
+        note: "check blocked"
       }
     });
   });
 });
-

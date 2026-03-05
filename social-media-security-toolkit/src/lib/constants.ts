@@ -18,31 +18,31 @@ export const USERNAME_PLATFORMS: UsernamePlatform[] = [
     id: "instagram",
     label: "Instagram",
     profileUrl: (u) => `https://www.instagram.com/${encodeURIComponent(u)}/`,
-    supportsVerification: false
+    supportsVerification: true
   },
   {
     id: "x",
     label: "X (Twitter)",
     profileUrl: (u) => `https://x.com/${encodeURIComponent(u)}`,
-    supportsVerification: false
+    supportsVerification: true
   },
   {
     id: "tiktok",
     label: "TikTok",
     profileUrl: (u) => `https://www.tiktok.com/@${encodeURIComponent(u)}`,
-    supportsVerification: false
+    supportsVerification: true
   },
   {
     id: "facebook",
     label: "Facebook",
     profileUrl: (u) => `https://www.facebook.com/${encodeURIComponent(u)}`,
-    supportsVerification: false
+    supportsVerification: true
   },
   {
     id: "youtube",
     label: "YouTube (handle)",
     profileUrl: (u) => `https://www.youtube.com/@${encodeURIComponent(u)}`,
-    supportsVerification: false
+    supportsVerification: true
   },
   {
     id: "github",
@@ -55,6 +55,17 @@ export const USERNAME_PLATFORMS: UsernamePlatform[] = [
     label: "Reddit",
     profileUrl: (u) => `https://www.reddit.com/user/${encodeURIComponent(u)}/`,
     supportsVerification: true
+  },
+  {
+    id: "devto",
+    label: "DEV Community",
+    profileUrl: (u) => `https://dev.to/${encodeURIComponent(u)}`,
+    supportsVerification: true
+  },
+  {
+    id: "keybase",
+    label: "Keybase",
+    profileUrl: (u) => `https://keybase.io/${encodeURIComponent(u)}`,
+    supportsVerification: true
   }
 ];
-
