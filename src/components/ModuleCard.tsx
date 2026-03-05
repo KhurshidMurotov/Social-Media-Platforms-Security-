@@ -6,8 +6,9 @@ export function ModuleCard(props: {
   children: ReactNode;
 }) {
   return (
-    <section className="card">
+    <section className="card panel">
       <div className="card__header">
+        <div className="card__meta">MODULE</div>
         <h2 className="card__title">{props.title}</h2>
         <p className="card__desc">{props.description}</p>
       </div>
@@ -15,4 +16,3 @@ export function ModuleCard(props: {
     </section>
   );
 }
-

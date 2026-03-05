@@ -11,6 +11,7 @@ export function Layout(props: { children: ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <div className="page">
+        <div className="page__noise" aria-hidden="true" />
         <header className="header">
           <div className="header__inner">
             <div className="header__bar">
@@ -29,6 +30,9 @@ export function Layout(props: { children: ReactNode }) {
                 </a>
                 <a href="#username-finder" className="nav__link">
                   Username Finder
+                </a>
+                <a href="#ethics" className="nav__link">
+                  Ethics
                 </a>
               </nav>
             </div>
