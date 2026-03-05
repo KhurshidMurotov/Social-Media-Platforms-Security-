@@ -14,6 +14,21 @@ export function Layout(props: { children: ReactNode }) {
         <title>{APP_NAME}</title>
         <meta name="description" content={DISCLAIMER} />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link
+          rel="icon"
+          href="https://cdn2.steamgriddb.com/icon/ac1c2b3ad86031575744ea1de5d4cddc/32/256x256.png"
+          type="image/svg+xml"
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href="https://cdn2.steamgriddb.com/icon/ac1c2b3ad86031575744ea1de5d4cddc/32/256x256.png"
+        />
+        <link
+          rel="shortcut icon"
+          href="https://cdn2.steamgriddb.com/icon/ac1c2b3ad86031575744ea1de5d4cddc/32/256x256.png"
+        />
       </Head>
       <div className="page">
         <div className="page__noise" aria-hidden="true" />
