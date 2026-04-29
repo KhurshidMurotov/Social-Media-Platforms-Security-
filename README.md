@@ -7,13 +7,13 @@ Educational web toolkit for social media cybersecurity awareness.
 - Password Strength Checker (client-side)
 - Email Leak Checker (LeakCheck Public API)
 - Phishing/Malicious URL Scanner (VirusTotal via server-side proxy)
-- OSINT Username Finder (profile links + limited verification via safe public APIs)
+- OSINT Username Finder (direct public profile-page verification where platforms allow it)
 
 ## Privacy and Ethics
 
 - Educational and awareness purposes only
 - No data storage: passwords, emails, usernames, and URLs are processed transiently
-- No scraping of unsupported platforms
+- No authenticated scraping; only public profile-page checks where platform responses allow safe verification
 - External API keys stay server-side in Next.js API routes
 
 ## Tech Stack

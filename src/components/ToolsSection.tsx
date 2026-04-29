@@ -77,7 +77,7 @@ export function ToolsSection() {
             </div>
             <ModuleCard
               title="OSINT Username Finder"
-              description="Shows where a username may exist across popular platforms, with limited verification via safe public APIs."
+              description="Checks public profile pages across popular platforms and verifies whether the username appears to exist."
             >
               <UsernameFinder />
             </ModuleCard>

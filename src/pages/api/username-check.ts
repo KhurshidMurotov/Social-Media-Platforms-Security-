@@ -1,19 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { sendError, sendOk, mapUpstreamStatus, type ApiResponse } from "@/lib/apiResponse";
-import { fetchWithTimeout } from "@/lib/fetchWithTimeout";
 import { rateLimit } from "@/lib/rateLimit";
+import {
+  checkPlatform,
+  profileUrlByPlatform,
+  type SupportedPlatform,
+  UpstreamStatusError
+} from "@/lib/usernameVerification";
 import { isValidUsername } from "@/lib/validators";
-
-type SupportedPlatform =
-  | "github"
-  | "reddit"
-  | "devto"
-  | "keybase"
-  | "instagram"
-  | "x"
-  | "tiktok"
-  | "facebook"
-  | "youtube";
 
 type UsernameCheckData = {
   platform: SupportedPlatform;
@@ -22,28 +16,6 @@ type UsernameCheckData = {
   verified: boolean;
   profileUrl: string;
   note?: string;
-};
-
-type VerifyResult =
-  | { exists: boolean; verified: true; note?: string }
-  | { exists: null; verified: false; note: string };
-
-class UpstreamStatusError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-const profileUrlByPlatform: Record<SupportedPlatform, (username: string) => string> = {
-  github: (u) => `https://github.com/${encodeURIComponent(u)}`,
-  reddit: (u) => `https://www.reddit.com/user/${encodeURIComponent(u)}/`,
-  devto: (u) => `https://dev.to/${encodeURIComponent(u)}`,
-  keybase: (u) => `https://keybase.io/${encodeURIComponent(u)}`,
-  instagram: (u) => `https://www.instagram.com/${encodeURIComponent(u)}/`,
-  x: (u) => `https://x.com/${encodeURIComponent(u)}`,
-  tiktok: (u) => `https://www.tiktok.com/@${encodeURIComponent(u)}`,
-  facebook: (u) => `https://www.facebook.com/${encodeURIComponent(u)}`,
-  youtube: (u) => `https://www.youtube.com/@${encodeURIComponent(u)}`
 };
 
 function getClientIp(req: NextApiRequest) {
@@ -84,53 +56,6 @@ function mapUpstreamError(res: NextApiResponse, status: number) {
     return sendError(res, mapped, "UPSTREAM_AUTH_FAILED", "Username verification request was not authorized.");
   }
   return sendError(res, 502, "UPSTREAM_REQUEST_FAILED", "Username verification request failed.");
-}
-
-async function checkGithub(username: string): Promise<VerifyResult> {
-  const response = await fetchWithTimeout(`https://api.github.com/users/${encodeURIComponent(username)}`, {
-    headers: { "user-agent": "social-media-security-toolkit (academic project)" }
-  });
-  if (response.status === 200) return { exists: true, verified: true };
-  if (response.status === 404) return { exists: false, verified: true };
-  throw new UpstreamStatusError(response.status, `GitHub returned ${response.status}`);
-}
-
-async function checkReddit(username: string): Promise<VerifyResult> {
-  const response = await fetchWithTimeout(`https://www.reddit.com/user/${encodeURIComponent(username)}/about.json`, {
-    headers: { "user-agent": "social-media-security-toolkit (academic project)" }
-  });
-  if (response.status === 200) return { exists: true, verified: true };
-  if (response.status === 404) return { exists: false, verified: true };
-  if (response.status === 403 || response.status === 429) {
-    return { exists: null, verified: false, note: "check blocked" };
-  }
-  throw new UpstreamStatusError(response.status, `Reddit returned ${response.status}`);
-}
-
-async function checkByHeadThenGet(url: string): Promise<Response> {
-  const head = await fetchWithTimeout(url, { method: "HEAD" });
-  if (head.status === 200 || head.status === 404) return head;
-  if (head.status === 405 || head.status === 501) {
-    return fetchWithTimeout(url, { method: "GET" });
-  }
-  return fetchWithTimeout(url, { method: "GET" });
-}
-
-async function checkProfileByStatus(url: string): Promise<VerifyResult> {
-  const response = await checkByHeadThenGet(url);
-  if (response.status === 200) return { exists: true, verified: true };
-  if (response.status === 404) return { exists: false, verified: true };
-  if (response.status === 403 || response.status === 429) {
-    return { exists: null, verified: false, note: "check blocked" };
-  }
-  throw new UpstreamStatusError(response.status, `Profile endpoint returned ${response.status}`);
-}
-
-async function checkPlatform(platform: SupportedPlatform, username: string): Promise<VerifyResult> {
-  if (platform === "github") return checkGithub(username);
-  if (platform === "reddit") return checkReddit(username);
-  const url = profileUrlByPlatform[platform](username);
-  return checkProfileByStatus(url);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse<UsernameCheckData>>) {

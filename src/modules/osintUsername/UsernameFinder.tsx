@@ -104,7 +104,7 @@ export function UsernameFinder() {
     return <StatusBadge variant="pending">checking...</StatusBadge>;
   }
 
-  const filteredItems = items.filter((item) => visibleItems.has(item.id) && (status[item.id] ?? "unknown") !== "not_found");
+  const filteredItems = items.filter((item) => visibleItems.has(item.id));
 
   return (
     <div>
@@ -142,8 +142,8 @@ export function UsernameFinder() {
       {filteredItems.length > 0 ? (
         <ResultBox tone="neutral" title="Profile links (awareness)">
           <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.72)" }}>
-            Ethical OSINT: Results shown after verification. Verification is available only for a small set of platforms
-            with safe public APIs.
+            Ethical OSINT: Results are shown after a direct check of the public profile page when the platform allows it.
+            Some platforms may still block automated public verification.
           </div>
           <ul>
             {filteredItems.map((item) => (

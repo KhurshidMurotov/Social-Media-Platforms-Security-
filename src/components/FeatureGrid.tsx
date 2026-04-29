@@ -23,7 +23,7 @@ const FEATURES = [
   {
     id: "osint",
     title: "Username Footprint",
-    description: "Cross-platform profile availability checks for safer OSINT awareness.",
+    description: "Cross-platform public profile checks with platform-aware verification signals.",
     tone: "grid"
   }
 ];
