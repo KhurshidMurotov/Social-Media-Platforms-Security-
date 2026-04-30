@@ -102,7 +102,7 @@ export function UsernameFinder() {
     if (value === "not_found") return <StatusBadge variant="warning">exact handle not found</StatusBadge>;
     if (value === "checking") return <StatusBadge variant="pending">checking...</StatusBadge>;
     if (value === "unavailable") return <StatusBadge variant="blocked">check blocked</StatusBadge>;
-    if (value === "manual") return <StatusBadge variant="pending">open link</StatusBadge>;
+    if (value === "manual") return <StatusBadge variant="pending">manual review only</StatusBadge>;
     return <StatusBadge variant="pending">waiting</StatusBadge>;
   }
 
@@ -146,6 +146,14 @@ export function UsernameFinder() {
           <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.72)" }}>
             Ethical OSINT: this checks the exact username or handle, not a person&apos;s real name. Some platforms allow a
             direct public verification, while others only expose a link for manual review.
+          </div>
+          <div style={{ marginBottom: 10, color: "rgba(255,255,255,0.58)", fontSize: 13 }}>
+            Manual review only means the platform does not expose a reliable public check from the server side. The link
+            can still open a login wall, a private page, or a content-unavailable screen.
+          </div>
+          <div style={{ marginBottom: 10, color: "rgba(255,255,255,0.58)", fontSize: 13 }}>
+            Check blocked means we tried an automated public check, but the platform answered with an anti-bot,
+            challenge, or otherwise non-verifiable response.
           </div>
           <ul>
             {filteredItems.map((item) => (
