@@ -30,13 +30,13 @@ export const USERNAME_PLATFORMS: UsernamePlatform[] = [
     id: "tiktok",
     label: "TikTok",
     profileUrl: (u) => `https://www.tiktok.com/@${encodeURIComponent(u)}`,
-    supportsVerification: true
+    supportsVerification: false
   },
   {
     id: "facebook",
     label: "Facebook",
     profileUrl: (u) => `https://www.facebook.com/${encodeURIComponent(u)}`,
-    supportsVerification: true
+    supportsVerification: false
   },
   {
     id: "youtube",

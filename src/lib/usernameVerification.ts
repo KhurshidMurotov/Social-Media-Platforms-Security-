@@ -23,11 +23,17 @@ type DetectionContext = {
   body: string;
 };
 
+type HeaderFactoryInput = {
+  username: string;
+  profileUrl: string;
+  requestUrl: string;
+};
+
 type PlatformConfig = {
   profileUrl: (username: string) => string;
   requestUrl?: (username: string) => string;
   timeoutMs?: number;
-  headers?: Record<string, string>;
+  headers?: Record<string, string> | ((input: HeaderFactoryInput) => Record<string, string>);
   detect?: (context: DetectionContext) => VerifyResult | null;
 };
 
@@ -60,20 +66,31 @@ export const profileUrlByPlatform: Record<SupportedPlatform, (username: string) 
 
 const platformConfigs: Record<SupportedPlatform, PlatformConfig> = {
   github: {
-    profileUrl: profileUrlByPlatform.github
+    profileUrl: profileUrlByPlatform.github,
+    detect: detectGitHubProfile
   },
   reddit: {
     profileUrl: profileUrlByPlatform.reddit,
-    requestUrl: (u) => `https://old.reddit.com/user/${encodeURIComponent(u)}/`
+    requestUrl: (u) => `https://old.reddit.com/user/${encodeURIComponent(u)}/`,
+    detect: detectRedditProfile
   },
   devto: {
-    profileUrl: profileUrlByPlatform.devto
+    profileUrl: profileUrlByPlatform.devto,
+    detect: detectDevToProfile
   },
   keybase: {
-    profileUrl: profileUrlByPlatform.keybase
+    profileUrl: profileUrlByPlatform.keybase,
+    detect: detectKeybaseProfile
   },
   instagram: {
     profileUrl: profileUrlByPlatform.instagram,
+    requestUrl: (u) => `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`,
+    headers: ({ profileUrl }) => ({
+      accept: "*/*",
+      referer: profileUrl,
+      "x-ig-app-id": "936619743392459",
+      "x-requested-with": "XMLHttpRequest"
+    }),
     detect: detectInstagramProfile
   },
   x: {
@@ -90,7 +107,8 @@ const platformConfigs: Record<SupportedPlatform, PlatformConfig> = {
     detect: detectFacebookProfile
   },
   youtube: {
-    profileUrl: profileUrlByPlatform.youtube
+    profileUrl: profileUrlByPlatform.youtube,
+    detect: detectYouTubeProfile
   }
 };
 
@@ -102,6 +120,22 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function normalizeUrl(value: string) {
+  return value.replace(/\/+$/, "").toLowerCase();
+}
+
+function getTitle(body: string) {
+  return body.match(/<title[^>]*>(.*?)<\/title>/i)?.[1]?.trim() ?? "";
+}
+
+function parseJsonSafe(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
 function hasExactMetaUrl(body: string, profileUrl: string) {
   const escapedUrl = escapeRegExp(profileUrl.replace(/\/+$/, ""));
   const patterns = [
@@ -111,14 +145,18 @@ function hasExactMetaUrl(body: string, profileUrl: string) {
   return patterns.some((pattern) => pattern.test(body));
 }
 
-function detectInstagramProfile({ body, profileUrl }: DetectionContext): VerifyResult | null {
-  if (body.includes('"pageID":"httpErrorPage"')) {
+function detectInstagramProfile({ body, username, response }: DetectionContext): VerifyResult | null {
+  if (response.headers.get("content-type")?.includes("application/json")) {
+    const payload = parseJsonSafe(body) as { data?: { user?: { username?: string } } } | null;
+    const profileUsername = payload?.data?.user?.username;
+    if (typeof profileUsername === "string" && profileUsername.toLowerCase() === username.toLowerCase()) {
+      return { exists: true, verified: true };
+    }
+  }
+  if (/Page Not Found/i.test(getTitle(body))) {
     return { exists: false, verified: true };
   }
-  if (body.includes('"pageID":"profilePage"') || hasExactMetaUrl(body, profileUrl)) {
-    return { exists: true, verified: true };
-  }
-  return blocked("profile page loaded, but Instagram did not expose a verifiable profile payload");
+  return blocked("public Instagram profile check did not return a verifiable profile payload");
 }
 
 function detectXProfile({ body, username }: DetectionContext): VerifyResult | null {
@@ -150,17 +188,81 @@ function detectFacebookProfile({ response, body }: DetectionContext): VerifyResu
   return blocked("public Facebook profile check was blocked");
 }
 
+function detectYouTubeProfile({ body, username }: DetectionContext): VerifyResult | null {
+  const normalizedBody = body.replace(/\\\//g, "/").toLowerCase();
+  const exactHandle = `@${username}`.toLowerCase();
+  const matchesExactHandle =
+    normalizedBody.includes(`"canonicalbaseurl":"/${exactHandle}"`) ||
+    normalizedBody.includes(`"vanitychannelurl":"http://www.youtube.com/${exactHandle}"`) ||
+    normalizedBody.includes(`"vanitychannelurl":"https://www.youtube.com/${exactHandle}"`) ||
+    normalizedBody.includes(`"ownerurls":["http://www.youtube.com/${exactHandle}"`) ||
+    normalizedBody.includes(`"ownerurls":["https://www.youtube.com/${exactHandle}"`);
+
+  if (matchesExactHandle) {
+    return { exists: true, verified: true };
+  }
+  if (/404 Not Found/i.test(getTitle(body))) {
+    return { exists: false, verified: true };
+  }
+  return blocked("public YouTube handle check did not return a verifiable profile payload");
+}
+
+function detectGitHubProfile({ body, username }: DetectionContext): VerifyResult | null {
+  const exactLogin = new RegExp(`octolytics-dimension-user_login["'][^>]+content=["']${escapeRegExp(username)}["']`, "i");
+  if (exactLogin.test(body)) {
+    return { exists: true, verified: true };
+  }
+  return blocked("public GitHub profile check did not return a verifiable profile payload");
+}
+
+function detectRedditProfile({ body, username, profileUrl }: DetectionContext): VerifyResult | null {
+  const exactTitle = new RegExp(`<title[^>]*>\\s*overview for ${escapeRegExp(username)}\\s*<\\/title>`, "i");
+  if (exactTitle.test(body) || hasExactMetaUrl(body, profileUrl)) {
+    return { exists: true, verified: true };
+  }
+  if (/page not found/i.test(getTitle(body))) {
+    return { exists: false, verified: true };
+  }
+  return blocked("public Reddit profile check did not return a verifiable profile payload");
+}
+
+function detectDevToProfile({ body, profileUrl }: DetectionContext): VerifyResult | null {
+  if (hasExactMetaUrl(body, profileUrl)) {
+    return { exists: true, verified: true };
+  }
+  if (/404: Page Not Found/i.test(getTitle(body))) {
+    return { exists: false, verified: true };
+  }
+  return blocked("public DEV profile check did not return a verifiable profile payload");
+}
+
+function detectKeybaseProfile({ body, username }: DetectionContext): VerifyResult | null {
+  const title = getTitle(body);
+  const expected = `${username} | Keybase`;
+  if (title.toLowerCase() === expected.toLowerCase()) {
+    return { exists: true, verified: true };
+  }
+  if (/not found/i.test(title) || /\b404\b/.test(body)) {
+    return { exists: false, verified: true };
+  }
+  return blocked("public Keybase profile check did not return a verifiable profile payload");
+}
+
 export async function checkPlatform(platform: SupportedPlatform, username: string): Promise<VerifyResult> {
   const config = platformConfigs[platform];
   const profileUrl = config.profileUrl(username);
   const requestUrl = config.requestUrl?.(username) ?? profileUrl;
+  const extraHeaders =
+    typeof config.headers === "function"
+      ? config.headers({ username, profileUrl, requestUrl })
+      : (config.headers ?? {});
 
   const response = await fetchWithTimeout(
     requestUrl,
     {
       headers: {
         ...PROFILE_HEADERS,
-        ...config.headers
+        ...extraHeaders
       }
     },
     config.timeoutMs ?? PROFILE_CHECK_TIMEOUT_MS
@@ -177,7 +279,7 @@ export async function checkPlatform(platform: SupportedPlatform, username: strin
   const needsBody = response.status === 200 || response.status === 400;
   const body = needsBody ? await response.text() : "";
 
-  if (config.detect) {
+  if (config.detect && needsBody) {
     const detected = config.detect({ username, profileUrl, requestUrl, response, body });
     if (detected) {
       return detected;
@@ -185,7 +287,10 @@ export async function checkPlatform(platform: SupportedPlatform, username: strin
   }
 
   if (response.status === 200) {
-    return { exists: true, verified: true };
+    if (normalizeUrl(response.url) === normalizeUrl(requestUrl) || normalizeUrl(response.url) === normalizeUrl(profileUrl)) {
+      return { exists: true, verified: true };
+    }
+    return blocked("profile page loaded, but the response URL did not match the requested profile");
   }
 
   if (response.status === 400) {

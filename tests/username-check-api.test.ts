@@ -46,7 +46,14 @@ afterEach(() => {
 
 describe("GET /api/username-check", () => {
   it("returns success payload on direct github profile response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html><title>octocat</title></html>", { status: 200 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response('<html><meta name="octolytics-dimension-user_login" content="octocat"><title>octocat</title></html>', {
+          status: 200
+        })
+      )
+    );
 
     const req = createMockReq({ platform: "github", username: "octocat" });
     const res = createMockRes();
@@ -85,15 +92,18 @@ describe("GET /api/username-check", () => {
     });
   });
 
-  it("marks instagram username as not found from the real page payload", async () => {
+  it("marks instagram username as found from the public profile JSON payload", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
-        new Response('<script>{"polarisRouteConfig":{"pageID":"httpErrorPage"}}</script>', { status: 200 })
+        new Response('{"data":{"user":{"username":"instagram"}}}', {
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" }
+        })
       )
     );
 
-    const req = createMockReq({ platform: "instagram", username: "missing_person_12345" });
+    const req = createMockReq({ platform: "instagram", username: "instagram" });
     const res = createMockRes();
 
     await handler(req as never, res as never);
@@ -103,10 +113,10 @@ describe("GET /api/username-check", () => {
       ok: true,
       data: {
         platform: "instagram",
-        username: "missing_person_12345",
-        exists: false,
+        username: "instagram",
+        exists: true,
         verified: true,
-        profileUrl: "https://www.instagram.com/missing_person_12345/",
+        profileUrl: "https://www.instagram.com/instagram/",
         note: undefined
       }
     });
@@ -188,6 +198,36 @@ describe("GET /api/username-check", () => {
         exists: true,
         verified: true,
         profileUrl: "https://www.reddit.com/user/spez/",
+        note: undefined
+      }
+    });
+  });
+
+  it("marks youtube handle as found only when the page embeds the exact handle metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          '<title>Google - YouTube</title><script>{"canonicalBaseUrl":"/@Google","vanityChannelUrl":"http://www.youtube.com/@Google"}</script>',
+          { status: 200 }
+        )
+      )
+    );
+
+    const req = createMockReq({ platform: "youtube", username: "Google" });
+    const res = createMockRes();
+
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      data: {
+        platform: "youtube",
+        username: "Google",
+        exists: true,
+        verified: true,
+        profileUrl: "https://www.youtube.com/@Google",
         note: undefined
       }
     });

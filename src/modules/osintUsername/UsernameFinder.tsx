@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { USERNAME_PLATFORMS } from "@/lib/constants";
 import { isValidUsername } from "@/lib/validators";
 
-type CheckStatus = "unknown" | "checking" | "exists" | "not_found" | "unavailable";
+type CheckStatus = "unknown" | "checking" | "exists" | "not_found" | "unavailable" | "manual";
 type StatusMap = Record<string, CheckStatus>;
 type VisibleItems = Set<string>;
 
@@ -89,6 +89,7 @@ export function UsernameFinder() {
 
     const nonSupported = USERNAME_PLATFORMS.filter((platform) => !platform.supportsVerification);
     for (let i = 0; i < nonSupported.length; i += 1) {
+      setStatus((prev) => ({ ...prev, [nonSupported[i].id]: "manual" }));
       await new Promise((resolve) => setTimeout(resolve, 200 + i * 100));
       setVisibleItems((prev) => new Set([...prev, nonSupported[i].id]));
     }
@@ -98,10 +99,11 @@ export function UsernameFinder() {
 
   function badge(value: CheckStatus) {
     if (value === "exists") return <StatusBadge variant="safe">found</StatusBadge>;
-    if (value === "not_found") return <StatusBadge variant="warning">not found</StatusBadge>;
+    if (value === "not_found") return <StatusBadge variant="warning">exact handle not found</StatusBadge>;
     if (value === "checking") return <StatusBadge variant="pending">checking...</StatusBadge>;
     if (value === "unavailable") return <StatusBadge variant="blocked">check blocked</StatusBadge>;
-    return <StatusBadge variant="pending">checking...</StatusBadge>;
+    if (value === "manual") return <StatusBadge variant="pending">open link</StatusBadge>;
+    return <StatusBadge variant="pending">waiting</StatusBadge>;
   }
 
   const filteredItems = items.filter((item) => visibleItems.has(item.id));
@@ -134,7 +136,7 @@ export function UsernameFinder() {
       {isSearching && visibleItems.size === 0 ? (
         <ResultBox tone="neutral" title="Searching...">
           <div style={{ color: "rgba(255,255,255,0.72)" }}>
-            Checking platforms for username availability. Results will appear sequentially...
+            Checking exact username and handle matches across supported platforms. Results will appear sequentially...
           </div>
         </ResultBox>
       ) : null}
@@ -142,19 +144,15 @@ export function UsernameFinder() {
       {filteredItems.length > 0 ? (
         <ResultBox tone="neutral" title="Profile links (awareness)">
           <div style={{ marginBottom: 8, color: "rgba(255,255,255,0.72)" }}>
-            Ethical OSINT: Results are shown after a direct check of the public profile page when the platform allows it.
-            Some platforms may still block automated public verification.
+            Ethical OSINT: this checks the exact username or handle, not a person&apos;s real name. Some platforms allow a
+            direct public verification, while others only expose a link for manual review.
           </div>
           <ul>
             {filteredItems.map((item) => (
               <li key={item.id} style={{ marginBottom: 6 }}>
-                {status[item.id] === "not_found" ? (
-                  <span>{item.label}</span>
-                ) : (
-                  <a href={item.url} target="_blank" rel="noopener noreferrer">
-                    {item.label}
-                  </a>
-                )}{" "}
+                <a href={item.url} target="_blank" rel="noopener noreferrer">
+                  {item.label}
+                </a>{" "}
                 {badge(status[item.id] ?? "unknown")}
               </li>
             ))}
