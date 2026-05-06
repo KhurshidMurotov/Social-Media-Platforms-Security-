@@ -9,6 +9,10 @@ export type PasswordStrength = {
   suggestions: string[];
 };
 
+export function calculateEntropy(password: string): number {
+  return estimatePasswordStrength(password).bits;
+}
+
 export function estimatePasswordStrength(password: string): PasswordStrength {
   const p = password ?? "";
   const warnings: string[] = [];
@@ -72,4 +76,3 @@ export function estimatePasswordStrength(password: string): PasswordStrength {
     suggestions
   };
 }
-

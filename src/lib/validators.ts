@@ -3,12 +3,16 @@ export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(email.trim());
 }
 
+export const validateEmail = isValidEmail;
+
 export function isValidUsername(username: string): boolean {
   // keep permissive but safe for URLs; exclude spaces
   const u = username.trim();
   if (u.length < 2 || u.length > 30) return false;
   return /^[a-zA-Z0-9._-]+$/.test(u);
 }
+
+export const validateUsername = isValidUsername;
 
 export function normalizeUrl(input: string): string | null {
   const raw = input.trim();
@@ -33,3 +37,6 @@ export function normalizeUrl(input: string): string | null {
   }
 }
 
+export function validateUrl(input: string): boolean {
+  return normalizeUrl(input) !== null;
+}

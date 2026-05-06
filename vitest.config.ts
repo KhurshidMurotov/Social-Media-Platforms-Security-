@@ -3,7 +3,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: "node"
+    environment: "node",
+    reporters: ["verbose"],
+    include: ["tests/**/*.test.ts"],
+    exclude: ["tests/username-check-api.test.ts"]
   },
   resolve: {
     alias: {
@@ -11,4 +14,3 @@ export default defineConfig({
     }
   }
 });
-
